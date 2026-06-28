@@ -11,8 +11,9 @@ Full spec: [AGENTREPLAY_PLAN.md](AGENTREPLAY_PLAN.md).
 
 - **Phase 0 (spike): DONE — GATE GREEN.** Core bet proven. See `spike/`.
 - **Phase 1 (recorder): DONE — 50/50 tests pass.** See `agentreplay/` and `tests/`.
-- **Phase 2 (replayer + divergence): NOT STARTED — next.**
-- Phases 3-4: not started.
+- **Phase 2 (replayer + divergence): DONE — 92/92 tests pass.**
+- **Phase 3 (pytest plugin + CI): DONE — 100/100 tests pass.**
+- **Phase 4 (dashboard + polish): DONE.**
 
 ### What Phase 1 built (2026-06-27)
 - `agentreplay/schema/trace.py` — Pydantic v2 models: 4 event types as discriminated
@@ -28,6 +29,33 @@ Full spec: [AGENTREPLAY_PLAN.md](AGENTREPLAY_PLAN.md).
 - `agentreplay/integrations/langgraph.py` — `wrap(build_fn, model)` public API.
 - `agentreplay/__init__.py` — re-exports: `wrap`, `now`, `random`, `uuid4`, `Trace`.
 - 50 tests across 7 test files, all passing.
+
+### What Phase 2 built (2026-06-28)
+- `agentreplay/replayer/replay_engine.py` — `ReplayEngine` + `ReplayResult`: runs agent
+  against recorded trace, produces replay trace + divergence report at zero LLM cost.
+  Internal `_ReplayChatModel` serves LLM responses; `_wrap_tool_for_replay` serves tool
+  outputs — both capture events to a new replay trace for diffing.
+- `agentreplay/replayer/matcher.py` — `TraceMatcher`: standalone hybrid hash+cursor matcher
+  extracted from Phase 1 interceptor, with `MatchStats` for hit/miss reporting.
+- `agentreplay/replayer/divergence.py` — `diff_traces()`: 3-tier diff (structural →
+  tool-call → LLM output). Clock/RNG events filtered out (always deterministic on replay).
+  `DivergenceReport.format_report()` for human-readable CLI output.
+- `agentreplay/cli.py` — `agentreplay diff <a> <b>` and `agentreplay show <trace>` commands.
+- 42 new tests across 3 test files. 92/92 total.
+
+### What Phase 3 built (2026-06-28)
+- `agentreplay/integrations/pytest_plugin.py` — pytest11 plugin: collects `.trace.json`
+  files as `TraceItem` tests. Pass = identical replay; fail = divergence report printed.
+  Configured via `agentreplay_traces` + `agentreplay_agent` ini options. Auto-inserts
+  rootpath into sys.path so user modules are importable.
+- `agentreplay/cli.py` — `agentreplay diff <a> <b>` and `agentreplay show <trace>` CLI.
+- `agentreplay/integrations/langgraph.py` — auto-stores `_agentreplay_input` in trace
+  metadata so plugin can replay without extra config.
+- `agentreplay/replayer/replay_engine.py` — auto-stubs tools from trace events when
+  build_fn takes 2 params and no tools are provided.
+- `examples/research_agent/` — dogfood demo agent with auto-recording conftest.
+- `.github/workflows/regression.yml` — CI: unit tests + trace regression suite on PR.
+- 8 new tests in test_pytest_plugin.py. 100/100 total.
 
 ### What the spike proved (2026-06-27)
 - LangGraph LLM calls are cleanly interceptable via a `BaseChatModel` wrapper
@@ -84,8 +112,19 @@ Full spec: [AGENTREPLAY_PLAN.md](AGENTREPLAY_PLAN.md).
 `agentreplay/{recorder,replayer,schema,integrations}/`, `cli.py`, `dashboard/`,
 `examples/research_agent/`, `.github/workflows/regression.yml`. `spike/` is throwaway.
 
+## What Phase 4 built (2026-06-28)
+- `dashboard/` — Next.js 16 + TypeScript + Tailwind dashboard (client-side only, no backend)
+  - `lib/types.ts` — TypeScript types mirroring Python schema
+  - `lib/diff.ts` — port of `divergence.py` to TypeScript (runs in-browser, zero API calls)
+  - `components/Timeline.tsx` — colour-coded event list, click-to-select
+  - `components/EventDetail.tsx` — full prompt/response/args panel
+  - `components/DiffView.tsx` — structural + tool + LLM diff with inline unified-diff blocks
+  - `app/page.tsx` — single-page app: file drag-drop, Trace Viewer tab, Diff tab
+- `agentreplay/cli.py` — `agentreplay serve [--port N]` starts dashboard via npm run dev
+- `README.md` — updated with full architecture, quick-start, all phases done, non-goals
+
 ## Next action
-Phase 2: build `agentreplay/replayer/` — replay engine, matcher (refactor from
-interceptor), divergence detector (structural + tool-call diff). Then CLI:
-`agentreplay record`, `agentreplay replay <trace>`, `agentreplay diff <trace>`.
-Exit when replaying an old trace against changed code yields a clear divergence report.
+Project complete (v1). All 4 phases done. Possible follow-ups:
+- Demo GIF / screenshots for README
+- PyPI publish (`pip install agentreplay`)
+- CrewAI / raw OpenAI support (Phase 5)

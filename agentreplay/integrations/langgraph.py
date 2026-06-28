@@ -77,13 +77,15 @@ class WrappedAgent:
         """Run the agent with recording or replay active."""
         from agentreplay.schema.trace import Trace
 
-        # Set up collector.
+        # Set up collector. Auto-store input so the pytest plugin can replay
+        # without the user having to specify it separately.
         if self._mode == "replay" and self._trace is not None:
             collector = TraceCollector(metadata=self._metadata)
             # Load the pre-existing trace into the collector for replay lookups.
             collector._trace = self._trace
         else:
-            collector = TraceCollector(metadata=self._metadata)
+            merged_metadata = {**self._metadata, "_agentreplay_input": input}
+            collector = TraceCollector(metadata=merged_metadata)
 
         # Wrap the model.
         recording_model = RecordingChatModel(
@@ -128,7 +130,8 @@ class WrappedAgent:
             collector = TraceCollector(metadata=self._metadata)
             collector._trace = self._trace
         else:
-            collector = TraceCollector(metadata=self._metadata)
+            merged_metadata = {**self._metadata, "_agentreplay_input": input}
+            collector = TraceCollector(metadata=merged_metadata)
 
         recording_model = RecordingChatModel(
             inner=self._original_model,

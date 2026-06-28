@@ -1,0 +1,58 @@
+name: AgentReplay Regression Suite
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  unit-tests:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install langgraph langchain-core langchain-anthropic pydantic
+          pip install pytest pytest-asyncio
+          pip install -e .
+
+      - name: Run test suite
+        run: pytest tests/ -v --tb=short
+
+  regression:
+    name: Trace Regression Suite
+    runs-on: ubuntu-latest
+    needs: unit-tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install langgraph langchain-core langchain-anthropic pydantic
+          pip install pytest pytest-asyncio
+          pip install -e .
+
+      - name: Run regression suite (example agent)
+        run: |
+          # Auto-generates traces on first run, then replays against current code.
+          # A divergence (e.g. a prompt change) causes this job to fail with
+          # a human-readable report showing exactly what changed.
+          pytest examples/research_agent/ -v --tb=short \
+            -p agentreplay.integrations.pytest_plugin

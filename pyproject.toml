@@ -32,6 +32,12 @@ dev = [
     "pytest-asyncio>=0.23",
 ]
 
+[project.scripts]
+agentreplay = "agentreplay.cli:main"
+
+[project.entry-points."pytest11"]
+agentreplay = "agentreplay.integrations.pytest_plugin"
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

@@ -32,3 +32,8 @@ Thumbs.db
 # AgentReplay
 traces/
 *.trace.json
+
+# Dashboard
+dashboard/node_modules/
+dashboard/.next/
+dashboard/out/

@@ -18,6 +18,8 @@ from agentreplay.integrations.langgraph import wrap, WrappedAgent
 from agentreplay.recorder.clock import now
 from agentreplay.recorder.rng import random, randint, uuid4
 from agentreplay.recorder.trace_writer import TraceWriter
+from agentreplay.replayer.replay_engine import ReplayEngine, ReplayResult
+from agentreplay.replayer.divergence import DivergenceReport, diff_traces
 from agentreplay.schema.trace import Trace
 
 __all__ = [
@@ -29,4 +31,8 @@ __all__ = [
     "uuid4",
     "Trace",
     "TraceWriter",
+    "ReplayEngine",
+    "ReplayResult",
+    "DivergenceReport",
+    "diff_traces",
 ]
