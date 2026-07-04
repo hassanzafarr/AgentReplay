@@ -104,6 +104,36 @@ agentreplay serve        # opens http://localhost:3000
 
 ## Architecture
 
+### Record → Replay flow
+
+```mermaid
+flowchart LR
+    subgraph Record["RECORD (live run, pays API cost once)"]
+        A[Your LangGraph agent] -->|"wrap(build_fn, model)"| B[RecordingChatModel]
+        A --> C[Instrumented Tools]
+        A --> D["now() / random() / uuid4()"]
+        B --> E[TraceCollector]
+        C --> E
+        D --> E
+        E --> F[("trace.json\nevents + blobs")]
+    end
+
+    subgraph Replay["REPLAY (offline, $0 cost)"]
+        F --> G[ReplayEngine]
+        G --> H[TraceMatcher\nhash → cursor → miss]
+        H --> I[Agent re-run\nagainst recorded events]
+        I --> J[New replay trace]
+        F --> K[diff_traces]
+        J --> K
+        K --> L[DivergenceReport\nstructural / tool-call / LLM]
+    end
+
+    L --> M[pytest plugin\nCI regression suite]
+    L --> N[Dashboard\nTrace Viewer + Diff View]
+```
+
+### Module layout
+
 ```
 agentreplay/
 ├── schema/

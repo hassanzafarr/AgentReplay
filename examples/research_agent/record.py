@@ -36,9 +36,9 @@ def main() -> None:
             metadata={"source": "example", "topic": inp["topic"]},
         )
         result = wrapped.invoke(inp)
-        print(f"  Recorded: {inp['topic']!r} → {wrapped.last_trace_path.name}")
-        print(f"    research: {result['research'][:60]}…")
-        print(f"    brief:    {result['brief'][:60]}…")
+        print(f"  Recorded: {inp['topic']!r} -> {wrapped.last_trace_path.name}")
+        print(f"    research: {result['research'][:60]}...")
+        print(f"    brief:    {result['brief'][:60]}...")
 
     print(f"\nDone. Run: pytest examples/research_agent/ -v")
 

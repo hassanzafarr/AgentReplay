@@ -37,3 +37,6 @@ traces/
 dashboard/node_modules/
 dashboard/.next/
 dashboard/out/
+
+# Personal notes
+EXPLAINER.md
