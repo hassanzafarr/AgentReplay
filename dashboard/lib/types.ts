@@ -3,7 +3,9 @@
 export type EventType = "llm_call" | "tool_call" | "clock" | "random";
 
 export interface MessageRecord {
-  role: string;
+  // Recorder writes `type` (langchain message type); older traces used `role`.
+  role?: string;
+  type?: string;
   content: string;
 }
 
