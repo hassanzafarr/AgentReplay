@@ -15,7 +15,8 @@ function parseTrace(text: string): Trace {
 }
 
 async function fetchSample(name: string): Promise<Trace> {
-  const res = await fetch(`/samples/${name}`);
+  const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
+  const res = await fetch(`${basePath}/samples/${name}`);
   if (!res.ok) throw new Error(`sample ${name} not found`);
   return parseTrace(await res.text());
 }

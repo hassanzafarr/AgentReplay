@@ -91,8 +91,10 @@ FAILED  traces/run_c3d4.trace.json::run_c3d4
 ```
 
 ### Visual Dashboard
-Inspect traces and compare two runs side-by-side in a browser:
+Inspect traces and compare two runs side-by-side in a browser — either locally or via the live online dashboard:
 
+- **Live Web App**: [https://hassanzafarr.github.io/AgentReplay](https://hassanzafarr.github.io/AgentReplay) (hosted on GitHub Pages, zero uploads required)
+- **Local Dev Server**:
 ```bash
 agentreplay serve        # opens http://localhost:3000
 ```
