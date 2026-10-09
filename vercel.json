@@ -3,5 +3,6 @@
   "installCommand": "npm install --prefix dashboard",
   "buildCommand": "npm run build --prefix dashboard",
   "outputDirectory": "dashboard/out",
-  "framework": null
+  "framework": null,
+  "cleanUrls": true
 }
