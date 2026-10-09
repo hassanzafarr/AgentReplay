@@ -51,8 +51,12 @@ jobs:
 
       - name: Run regression suite (example agent)
         run: |
-          # Auto-generates traces on first run, then replays against current code.
-          # A divergence (e.g. a prompt change) causes this job to fail with
-          # a human-readable report showing exactly what changed.
+          # Replays committed traces against current code. A divergence
+          # (e.g. a prompt change) causes this job to fail with a
+          # human-readable report showing exactly what changed.
+          # Plugin auto-loads via the pytest11 entry point; options are passed
+          # explicitly because the example conftest only self-configures when
+          # pytest is run from inside examples/research_agent/.
           pytest examples/research_agent/ -v --tb=short \
-            -p agentreplay.integrations.pytest_plugin
+            --agentreplay-traces=examples/research_agent/traces \
+            --agentreplay-agent=examples.research_agent.agent:build_agent

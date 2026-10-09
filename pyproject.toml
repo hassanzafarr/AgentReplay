@@ -1,6 +1,6 @@
 [build-system]
 requires = ["hatchling"]
-build-backend = "hatchling.backends"
+build-backend = "hatchling.build"
 
 [project]
 name = "agentreplay"
@@ -36,7 +36,7 @@ dev = [
 agentreplay = "agentreplay.cli:main"
 
 [project.entry-points."pytest11"]
-agentreplay = "agentreplay.integrations.pytest_plugin"
+"agentreplay.integrations.pytest_plugin" = "agentreplay.integrations.pytest_plugin"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
