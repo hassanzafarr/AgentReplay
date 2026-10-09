@@ -60,3 +60,6 @@ jobs:
           pytest examples/research_agent/ -v --tb=short \
             --agentreplay-traces=examples/research_agent/traces \
             --agentreplay-agent=examples.research_agent.agent:build_agent
+
+      - name: Smoke-test the README demo
+        run: python -m examples.research_agent.demo

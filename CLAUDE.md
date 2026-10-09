@@ -72,7 +72,7 @@ Full spec: [AGENTREPLAY_PLAN.md](AGENTREPLAY_PLAN.md).
 - Windows / PowerShell primary. Python 3.11.8.
 - Installed: langgraph 1.2.6, langchain-core 1.4.8, langchain-anthropic 1.4.8,
   anthropic 0.112.0, pydantic 2.12.5, pytest 8.3.3, pytest-asyncio 1.3.0.
-- **Not a git repo yet.**
+- Git repo: github.com/hassanzafarr/AgentReplay (master).
 
 ## Architecture decisions (and why)
 

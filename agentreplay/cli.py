@@ -126,7 +126,17 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def _ensure_utf8_stdout() -> None:
+    """Reports contain emoji/box-drawing chars; Windows consoles default to
+    cp1252 and raise UnicodeEncodeError on them. Switch to UTF-8 and replace
+    anything the terminal still can't render instead of crashing."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main() -> int:
+    _ensure_utf8_stdout()
     parser = argparse.ArgumentParser(
         prog="agentreplay",
         description="Deterministic record/replay for LangGraph agents.",

@@ -1,112 +1,164 @@
 # AgentReplay
 
-**Deterministic record/replay and regression-testing harness for LangGraph agents.**
+**Record an AI agent's run once. Replay it forever, offline, at $0. Catch regressions before they ship.**
 
-Record every LLM call, tool response, clock value, and RNG draw during a live run. Replay the exact sequence offline to reproduce failures, diff a new prompt/model against recorded traces, and run regression tests — all at **~$0 API cost**.
+[![CI](https://github.com/hassanzafarr/AgentReplay/actions/workflows/regression.yml/badge.svg)](https://github.com/hassanzafarr/AgentReplay/actions/workflows/regression.yml)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![Tests](https://img.shields.io/badge/tests-100%20passing-brightgreen)
+![LangGraph](https://img.shields.io/badge/LangGraph-1.x-purple)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
----
-
-## The Problem
-
-AI agents are non-deterministic. Every run can behave differently because of four "impure" inputs:
-
-| Source | Example |
-|--------|---------|
-| **LLM responses** | Same prompt, different completion each time |
-| **Tool/API results** | Search returns different data over time |
-| **The clock** | `datetime.now()` changes every second |
-| **Randomness** | `random()`, `uuid4()` |
-
-This makes agents nearly impossible to **debug** ("why did it fail last Tuesday?"), **test** ("did my prompt change break anything?"), or **compare** ("is the new model better for this workflow?").
-
-Setting `temperature=0` is not enough — tool results still change, clocks still tick, and UUIDs are still random.
+AgentReplay is a deterministic record/replay and regression-testing harness for
+[LangGraph](https://github.com/langchain-ai/langgraph) agents. It works like snapshot
+testing or a flight recorder for LLM agents: it captures every non-deterministic input
+during a real run, then plays that run back exactly. You can debug failures, test prompt
+changes in CI, and compare model versions without paying for a single API call.
 
 ---
 
-## The Solution
+## TL;DR
 
-AgentReplay intercepts and records all four impure inputs during a live run. On replay, it feeds the recorded values back in exact sequence. The agent becomes **perfectly reproducible**.
+| | |
+|---|---|
+| **Problem** | LLM agents give different results on every run. You can't reliably reproduce a bug, unit-test a prompt change, or compare two models, and re-running against the live API to "test" costs money every time. |
+| **Solution** | Intercept the four sources of non-determinism (LLM responses, tool results, the clock, randomness), save them to a trace file, and feed them back on replay. The agent becomes a deterministic program. |
+| **Result** | Any recorded run becomes a free, offline regression test. A one-word prompt edit is caught in CI with a readable diff showing exactly which call changed. |
+| **Built with** | Python 3.11, LangGraph, LangChain Core, Pydantic v2, pytest plugin API, GitHub Actions, Next.js 16 + TypeScript + Tailwind |
+| **Quality** | 100 unit/integration tests, golden-trace regression suite in CI, and a "tripwire" proof that replay makes zero live calls |
 
+---
+
+## See it work (60 seconds, no API key)
+
+```bash
+git clone https://github.com/hassanzafarr/AgentReplay.git
+cd AgentReplay
+pip install -e ".[dev]"
+python -m examples.research_agent.demo
+```
+
+Real output, lightly trimmed:
+
+```
+================================================================
+  1. RECORD a live run
+================================================================
+Recorded 2 events -> 88972ff4-....trace.json
+  [0] llm_call  hash=d48492e0f6ba
+  [1] llm_call  hash=acb72d0f1323
+
+================================================================
+  2. REPLAY offline against a tripwire model
+================================================================
+Tripwire fired: no  ->  0 live LLM calls, $0 spent
+Matcher: 2 hash hits, 0 misses
+Final state identical to recording: True
+✅ Traces are IDENTICAL. No divergences found.
+
+================================================================
+  3. CATCH a regression: one word changed in a prompt
+================================================================
+Replay stopped at the changed call:
+  REPLAY MISS: no recorded LLM response for hash 558a5b044488… — divergence from recorded trace.
+
+❌ 2 divergence(s) found.
+── LLM Outputs (2) ──────────────────────────
+  [seq 0→0] prompt changed, output changed
+      -[Recorded response for: Research this topic thoroughly: carbon capture and storage]
+      +[Recorded response for: Research this topic briefly: carbon capture and storage]
+  [seq 1→1] prompt changed
+```
+
+During replay the agent is given a **`TripwireModel`, a model that raises an exception
+if it is ever called**. It never fires, which proves replay is fully offline. That is a
+stronger guarantee than "we used a test key and the bill looked small."
+
+---
+
+## Why this is hard (and why `temperature=0` doesn't solve it)
+
+An agent run depends on four impure inputs:
+
+| Source | Example | Fixed by `temperature=0`? |
+|---|---|---|
+| **LLM responses** | Same prompt, different completion | Partly. Providers still don't guarantee identical output. |
+| **Tool / API results** | A search API returns different data next week | No |
+| **The clock** | `datetime.now()` changes every call | No |
+| **Randomness** | `random()`, `uuid4()` | No |
+
+AgentReplay controls all four.
+
+---
+
+## Features
+
+### 1. Record: one line to instrument an agent
 ```python
 import agentreplay
+from langchain_anthropic import ChatAnthropic
 
-# Record a live run — one-time API cost
-wrapped = agentreplay.wrap(build_my_agent, model=ChatAnthropic(...))
-result = wrapped.invoke({"topic": "carbon capture"})
-# → saves ./traces/<run_id>.trace.json
+wrapped = agentreplay.wrap(build_fn=build_my_agent, model=ChatAnthropic(model="claude-sonnet-5-5"))
+result = wrapped.invoke({"topic": "quantum computing"})
+# -> ./traces/<run_id>.trace.json
+```
+Every LLM call, tool call, `agentreplay.now()`, and `agentreplay.random()` / `uuid4()`
+is stored as a typed, ordered event. Large payloads are content-addressed into a `blobs`
+map so traces stay small.
 
-# Replay offline — zero API calls, $0 cost
-from agentreplay.replayer.replay_engine import ReplayEngine
+### 2. Replay at $0
+```python
+from agentreplay import ReplayEngine, TraceWriter
 
-engine = ReplayEngine(recorded_trace=trace, build_fn=build_my_agent, model=TripwireModel())
-result = engine.run({"topic": "carbon capture"})
+trace = TraceWriter.read("traces/<run_id>.trace.json")
+# TripwireModel: any BaseChatModel that raises if called (see examples/research_agent/demo.py)
+result = ReplayEngine(recorded_trace=trace, build_fn=build_my_agent, model=TripwireModel()).run(
+    {"topic": "quantum computing"}
+)
 print(result.divergence_report.format_report())
 ```
 
----
+### 3. Divergence detection: three tiers, all free
+1. **Structural**: did the agent take the same path through the graph?
+2. **Tool calls**: same tool, same arguments, same output?
+3. **LLM calls**: same prompt, same response? Shown as a unified diff.
 
-## Key Features
-
-### Record
-Wraps your LangGraph agent transparently. Every LLM call, tool invocation, `datetime.now()`, and `random()` is captured as a typed, ordered event in a JSON trace file. Large responses are content-addressed in a `blobs` dict to control file size.
-
-### Replay at $0
-Re-runs your agent against a recorded trace with zero live API calls. Hybrid matching (content hash → ordered cursor → miss = divergence) pairs each call with its recorded response. A `TripwireModel` wrapper can prove no live calls were made — it raises if invoked.
-
-### Divergence Detection
-Replay an old trace against new code, prompt, or model. Three-tier comparison — all free:
-
-1. **Structural** — did the agent take the same path through the graph?
-2. **Tool-call** — same tool name, same args, same output?
-3. **LLM output** — same prompt, same response?
-
-```
-❌ 2 divergence(s) found.
-── Structural (1) ──────────────────────────
-  [3] Event type changed: tool_call → llm_call
-      A: tool_call(seq=3, tool=search)
-      B: llm_call(seq=3, prompt="Summarize...")
-
-── LLM Outputs (1) ─────────────────────────
-  [seq 5→5] output changed
-      -The company was founded in 1998...
-      +The company was founded in 2001...
-```
-
-### pytest Regression Suite
-Each `.trace.json` file becomes a regression test. CI runs them on every PR — green/red check, zero API cost.
-
+### 4. Traces become pytest tests in CI
 ```toml
 # pyproject.toml
 [tool.pytest.ini_options]
 agentreplay_traces = "traces/"
 agentreplay_agent  = "myagent:build_agent"
 ```
-
 ```
 $ pytest
-PASSED  traces/run_a1b2.trace.json::run_a1b2
-FAILED  traces/run_c3d4.trace.json::run_c3d4
-  ❌ 1 divergence: agent skipped research step after prompt change.
+traces/6eb6f580.trace.json::6eb6f580 PASSED
+traces/9cc11011.trace.json::9cc11011 FAILED
+  ❌ 1 divergence: prompt changed at seq 0
 ```
+This repo runs that suite on every push and PR ([regression.yml](.github/workflows/regression.yml)).
+No API key is needed in CI.
 
-### Visual Dashboard
-Inspect traces and compare two runs side-by-side in a browser — either locally or via the live online dashboard:
+### 5. Visual dashboard
+A client-side Next.js app. Traces are parsed and diffed in the browser, and nothing is
+uploaded.
+- **Trace Viewer**: colour-coded event timeline with a click-to-inspect panel (full prompts, responses, tool args)
+- **Diff View**: load a baseline and a candidate, and see structural, tool, and LLM divergences side by side
+- Bundled sample traces, so you can try it without uploading anything
 
-- **Live Web App**: [https://hassanzafarr.github.io/AgentReplay](https://hassanzafarr.github.io/AgentReplay) (hosted on GitHub Pages, zero uploads required)
-- **Local Dev Server**:
 ```bash
-agentreplay serve        # opens http://localhost:3000
+agentreplay serve          # http://localhost:3000
 ```
 
-- **Trace Viewer** — event timeline (LLM calls, tool calls, clock, RNG) with click-to-inspect detail panel showing full prompts and responses
-- **Diff View** — load two traces, see structural + tool + LLM divergences highlighted
+### 6. CLI
+```bash
+agentreplay show traces/run.trace.json            # pretty-print a trace
+agentreplay diff traces/old.trace.json traces/new.trace.json
+agentreplay serve [--port N]                      # launch the dashboard
+```
 
 ---
 
 ## Architecture
-
-### Record → Replay flow
 
 ```mermaid
 flowchart LR
@@ -134,124 +186,85 @@ flowchart LR
     L --> N[Dashboard\nTrace Viewer + Diff View]
 ```
 
-### Module layout
-
 ```
 agentreplay/
-├── schema/
-│   └── trace.py              # Pydantic v2 models — the record/replay contract
+├── schema/trace.py            # Pydantic v2 models: the record/replay contract
 ├── recorder/
-│   ├── interceptor.py        # RecordingChatModel (BaseChatModel wrapper, not monkeypatch)
-│   ├── tool_wrapper.py       # Instruments StructuredTool.func to capture I/O
-│   ├── clock.py              # VirtualClock — drop-in for datetime.now()
-│   ├── rng.py                # VirtualRNG — drop-in for random()/uuid4()
-│   ├── collector.py          # Thread-safe event accumulator, atomic seq counter
-│   └── trace_writer.py       # JSON serialization with Pydantic round-trip
+│   ├── interceptor.py         # RecordingChatModel: BaseChatModel wrapper, no monkeypatching
+│   ├── tool_wrapper.py        # Captures tool inputs/outputs
+│   ├── clock.py, rng.py       # Scoped virtual clock + RNG
+│   ├── collector.py           # Thread-safe event log with atomic sequence counter
+│   └── trace_writer.py        # JSON persistence with schema validation
 ├── replayer/
-│   ├── replay_engine.py      # ReplayEngine — re-runs agent at zero API cost
-│   ├── matcher.py            # TraceMatcher — hybrid hash+cursor event lookup
-│   └── divergence.py        # diff_traces() — 3-tier structural comparison
+│   ├── replay_engine.py       # Re-runs the agent against a recorded trace
+│   ├── matcher.py             # Hybrid hash + cursor matching
+│   └── divergence.py          # 3-tier diff + human-readable report
 ├── integrations/
-│   ├── langgraph.py          # wrap() — public record API for LangGraph
-│   └── pytest_plugin.py      # pytest11 plugin — .trace.json files as tests
-├── cli.py                    # agentreplay diff / show / serve
-dashboard/                    # Next.js + React visual trace inspector
-examples/
-└── research_agent/           # Dogfood demo with auto-recording conftest
-.github/workflows/
-└── regression.yml            # CI: runs full trace regression suite on PRs
+│   ├── langgraph.py           # wrap(): public record API
+│   └── pytest_plugin.py       # Turns *.trace.json files into test items
+└── cli.py                     # show / diff / serve
+dashboard/                     # Next.js + TypeScript trace inspector (diff logic ported to TS)
+examples/research_agent/       # Demo agent, golden traces, end-to-end demo script
 ```
-
-### Design Decisions
-
-| Decision | Choice | Why |
-|----------|--------|-----|
-| **LLM interception** | `BaseChatModel` wrapper | Stable extension point, any provider, survives upgrades. Rejected monkeypatch: fragile, per-provider. |
-| **Call matching** | Hybrid: hash → cursor → miss | Hash handles changed code paths; cursor disambiguates retry loops; miss = reported divergence, not crash. |
-| **Trace format** | Single JSON per run, Pydantic v2 | Typed discriminated union, `schema_version=1`, content-addressed blobs, global `seq` index for async ordering. |
-| **Divergence** | Structural + tool-call (free), semantic opt-in | Real regressions hide in graph path and tool args. LLM-judge costs tokens — keep it opt-in. |
-| **Clock/RNG** | Context-manager scoped | No global import-time patching — won't pollute the host process. |
 
 ---
 
-## Installation
+## Engineering highlights
+
+Each decision below includes the alternative I rejected and why.
+
+| Problem | Decision | Rejected alternative |
+|---|---|---|
+| **How to intercept LLM calls** | Wrap LangChain's `BaseChatModel`. It is a stable extension point that works with any provider, and every call in the graph flows through it. | Monkeypatching provider SDKs: fragile, per-provider, and blind to LangChain's message normalisation. |
+| **Matching a call to its recording** | **Hybrid: content hash first, ordered cursor second, miss = reported divergence.** The hash survives reordered code paths, and the cursor disambiguates identical repeated prompts (retry loops). | Pure ordering breaks on parallel nodes. Pure hashing can't tell two identical retries apart. |
+| **What happens when replay doesn't match** | A miss is a **reported feature, not a crash**. It becomes the test-failure message. | Throwing a generic error, which tells the developer nothing. |
+| **Trace format** | One JSON file per run, a Pydantic v2 discriminated union of 4 event types, a global `seq` for async ordering, content-addressed blobs, and `schema_version` frozen at 1. | Ad-hoc dicts, which give no validation and silently corrupt old traces. |
+| **Clock & randomness** | Virtualised inside a context manager that is scoped to the run. | Global patching at import time, which pollutes the host process and other tests. |
+| **Proving zero cost** | A tripwire model that raises if called. | Checking the API bill: indirect, slow, and not provable in CI. |
+
+### How it was built
+The project was built in gated phases, and each phase had to pass its tests before the
+next started:
+
+| Phase | Deliverable | Gate |
+|---|---|---|
+| 0. Spike | Prove interception + byte-identical replay | 4/4 gate tests, tripwire never fires |
+| 1. Recorder | Schema, interceptors, virtual clock/RNG, `wrap()` | 50 tests |
+| 2. Replayer | Replay engine, hybrid matcher, 3-tier diff, CLI | 92 tests |
+| 3. CI | pytest plugin, GitHub Actions regression suite | 100 tests |
+| 4. Dashboard | Next.js trace viewer + diff view | Production build + type-check |
+
+---
+
+## Testing
 
 ```bash
-git clone https://github.com/hassanzafarr/AgentReplay.git
-cd AgentReplay
-pip install -e ".[dev]"
+pytest tests/ -q                     # 100 unit + integration tests, ~2s
+pytest examples/research_agent/ \
+  --agentreplay-traces=examples/research_agent/traces \
+  --agentreplay-agent=examples.research_agent.agent:build_agent   # golden-trace regression suite
 ```
-
-## Quick Start
-
-```python
-import agentreplay
-from langchain_anthropic import ChatAnthropic
-
-def build_my_agent(model):
-    # ... your StateGraph setup ...
-    return graph.compile()
-
-model = ChatAnthropic(model="claude-sonnet-4-5")
-wrapped = agentreplay.wrap(build_fn=build_my_agent, model=model)
-result = wrapped.invoke({"topic": "quantum computing"})
-```
-
-### Virtual Clock & RNG
-
-Use AgentReplay's drop-in replacements inside your agent for full determinism:
-
-```python
-import agentreplay
-
-timestamp = agentreplay.now()     # instead of datetime.now()
-value     = agentreplay.random()  # instead of random.random()
-run_id    = agentreplay.uuid4()   # instead of uuid.uuid4()
-```
-
-These pass through to stdlib normally. Inside a `wrap()` context they record/replay automatically.
-
-### CLI
-
-```bash
-agentreplay show traces/run_abc.trace.json      # inspect a trace
-agentreplay diff traces/old.trace.json traces/new.trace.json  # compare two traces
-agentreplay serve                                # open visual dashboard
-```
+Each test's docstring states what it proves *and* what it deliberately does not cover.
 
 ---
 
-## Running Tests
+## Limitations (v1)
 
-```bash
-python -m pytest tests/ -v
-# 100 passed in ~2s
-```
+I chose these limits on purpose to keep v1 focused:
+- **LangGraph only.** CrewAI and raw OpenAI loops are not supported yet, although the interception design carries over.
+- **Read-mostly tools.** Write side effects are not sandboxed during replay.
+- **Final message only.** Replay restores the final message, not the token stream.
+- **Node-name-based structural diff.** Renaming a node shows up as noise in the diff.
+- **SDK calls that bypass `BaseChatModel`** are not intercepted. They surface as missing events instead of failing silently.
 
----
-
-## Project Status
-
-| Phase | Status | Description |
-|-------|--------|-------------|
-| Phase 0 — Spike | Done | Proved LLM interception works via `BaseChatModel` wrapper |
-| Phase 1 — Recorder | Done | Schema, interceptor, tools, clock, RNG, trace writer, `wrap()` API |
-| Phase 2 — Replayer + Divergence | Done | `ReplayEngine`, `TraceMatcher`, `diff_traces()`, CLI |
-| Phase 3 — pytest + CI | Done | pytest plugin, GitHub Actions regression suite, examples |
-| Phase 4 — Dashboard | Done | Next.js visual trace inspector + diff view, `agentreplay serve` |
-
----
-
-## Explicit Non-Goals (v1)
-
-- **Framework-agnostic** — LangGraph-only. No CrewAI or raw OpenAI loops.
-- **Distributed agents** — Single-process only.
-- **Hosted SaaS** — Self-host only.
-- **Token-stream replay** — Records the final message, not the token stream.
-- **Write-tool sandboxing** — Replay assumes read-mostly tools. Write side effects not sandboxed.
+## Roadmap
+- Opt-in semantic diff using an LLM judge ("did the meaning change?")
+- CrewAI and raw OpenAI SDK adapters
+- Sandboxed replay for write-side-effect tools
+- PyPI release
 
 ---
 
 ## License
 
-MIT
+[MIT](LICENSE) © Hassan Zafar

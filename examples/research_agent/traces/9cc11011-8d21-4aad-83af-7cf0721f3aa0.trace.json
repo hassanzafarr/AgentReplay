@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "run_id": "9cc11011-8d21-4aad-83af-7cf0721f3aa0",
+  "created_at": "2026-07-04T15:02:07.381001Z",
+  "metadata": {
+    "source": "example",
+    "topic": "quantum computing applications",
+    "_agentreplay_input": {
+      "topic": "quantum computing applications",
+      "research": "",
+      "brief": ""
+    }
+  },
+  "events": [
+    {
+      "event_type": "llm_call",
+      "seq": 0,
+      "ts": "2026-07-04T15:02:07.381001Z",
+      "hash": "d546cd0fd8d6e51bc094e413f7cc82aa023bace53e3cfe5de80d70db16fd73ba",
+      "model_name": "standin",
+      "input_messages": [
+        {
+          "type": "human",
+          "content": "Research this topic thoroughly: quantum computing applications"
+        }
+      ],
+      "output": "[Recorded response for: Research this topic thoroughly: quantum computing applications]",
+      "kwargs": {},
+      "input_blob_key": null,
+      "output_blob_key": null
+    },
+    {
+      "event_type": "llm_call",
+      "seq": 1,
+      "ts": "2026-07-04T15:02:07.381001Z",
+      "hash": "1e91140034302cc708d3a96bf6708d7e2b52efcc34234facea50a4b43cb78324",
+      "model_name": "standin",
+      "input_messages": [
+        {
+          "type": "human",
+          "content": "Write a concise brief based on this research:\n\n[Recorded response for: Research this topic thoroughly: quantum computing applications]"
+        }
+      ],
+      "output": "[Recorded response for: Write a concise brief based on this research:\n\n[Recorded response for: Research ]",
+      "kwargs": {},
+      "input_blob_key": null,
+      "output_blob_key": null
+    }
+  ],
+  "blobs": {}
+}

@@ -29,9 +29,13 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# AgentReplay
+# AgentReplay — ignore ad-hoc recordings, but keep the committed golden
+# traces: CI replays the example ones and the live dashboard serves samples.
 traces/
 *.trace.json
+!examples/research_agent/traces/
+!examples/research_agent/traces/*.trace.json
+!dashboard/public/samples/*.trace.json
 
 # Dashboard
 dashboard/node_modules/

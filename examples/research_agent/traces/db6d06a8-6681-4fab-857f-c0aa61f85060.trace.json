@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "run_id": "db6d06a8-6681-4fab-857f-c0aa61f85060",
+  "created_at": "2026-07-04T15:02:07.364169Z",
+  "metadata": {
+    "source": "example",
+    "topic": "carbon capture and storage",
+    "_agentreplay_input": {
+      "topic": "carbon capture and storage",
+      "research": "",
+      "brief": ""
+    }
+  },
+  "events": [
+    {
+      "event_type": "llm_call",
+      "seq": 0,
+      "ts": "2026-07-04T15:02:07.364169Z",
+      "hash": "d48492e0f6ba80850c02b086f152e75cdb171ded5aefde6f2221e1fb385227ff",
+      "model_name": "standin",
+      "input_messages": [
+        {
+          "type": "human",
+          "content": "Research this topic thoroughly: carbon capture and storage"
+        }
+      ],
+      "output": "[Recorded response for: Research this topic thoroughly: carbon capture and storage]",
+      "kwargs": {},
+      "input_blob_key": null,
+      "output_blob_key": null
+    },
+    {
+      "event_type": "llm_call",
+      "seq": 1,
+      "ts": "2026-07-04T15:02:07.364169Z",
+      "hash": "acb72d0f132308f774623511a90eafe74d5988a19972e9a3057c0a03c9a51168",
+      "model_name": "standin",
+      "input_messages": [
+        {
+          "type": "human",
+          "content": "Write a concise brief based on this research:\n\n[Recorded response for: Research this topic thoroughly: carbon capture and storage]"
+        }
+      ],
+      "output": "[Recorded response for: Write a concise brief based on this research:\n\n[Recorded response for: Research ]",
+      "kwargs": {},
+      "input_blob_key": null,
+      "output_blob_key": null
+    }
+  ],
+  "blobs": {}
+}
