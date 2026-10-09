@@ -8,6 +8,8 @@
 ![LangGraph](https://img.shields.io/badge/LangGraph-1.x-purple)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
+**[Live dashboard demo →](https://replay-agent.vercel.app)** · click "try a sample trace", no install needed
+
 AgentReplay is a deterministic record/replay and regression-testing harness for
 [LangGraph](https://github.com/langchain-ai/langgraph) agents. It works like snapshot
 testing or a flight recorder for LLM agents: it captures every non-deterministic input
@@ -139,7 +141,7 @@ This repo runs that suite on every push and PR ([regression.yml](.github/workflo
 No API key is needed in CI.
 
 ### 5. Visual dashboard
-A client-side Next.js app. Traces are parsed and diffed in the browser, and nothing is
+A client-side Next.js app, live at **[replay-agent.vercel.app](https://replay-agent.vercel.app)**. Traces are parsed and diffed in the browser, and nothing is
 uploaded.
 - **Trace Viewer**: colour-coded event timeline with a click-to-inspect panel (full prompts, responses, tool args)
 - **Diff View**: load a baseline and a candidate, and see structural, tool, and LLM divergences side by side
