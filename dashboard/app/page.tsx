@@ -270,10 +270,12 @@ export default function Home() {
             ))}
           </div>
           <a
-            href="https://github.com"
+            href="https://github.com/hassanzafarr/AgentReplay"
             className="hidden text-fg-subtle transition-colors hover:text-fg sm:block"
             aria-label="Repository"
             title="Repository"
+            target="_blank"
+            rel="noopener noreferrer"
           >
             ↗
           </a>
