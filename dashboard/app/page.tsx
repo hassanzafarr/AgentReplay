@@ -1,11 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { Trace, TraceEvent, EventType } from "@/lib/types";
 import { resolveBlobs } from "@/lib/diff";
 import Timeline from "@/components/Timeline";
 import EventDetail from "@/components/EventDetail";
 import DiffView from "@/components/DiffView";
+import ThemeToggle from "@/components/ThemeToggle";
+import Link from "next/link";
 
 type Tab = "trace" | "diff";
 
@@ -19,39 +21,6 @@ async function fetchSample(name: string): Promise<Trace> {
   const res = await fetch(`${basePath}/samples/${name}`);
   if (!res.ok) throw new Error(`sample ${name} not found`);
   return parseTrace(await res.text());
-}
-
-/* ---------- theme toggle ---------- */
-
-function useTheme(): [boolean, () => void] {
-  const [dark, setDark] = useState(false);
-  useEffect(() => {
-    setDark(document.documentElement.classList.contains("dark"));
-  }, []);
-  const toggle = useCallback(() => {
-    setDark((d) => {
-      const next = !d;
-      document.documentElement.classList.toggle("dark", next);
-      try {
-        localStorage.setItem("ar-theme", next ? "dark" : "light");
-      } catch {}
-      return next;
-    });
-  }, []);
-  return [dark, toggle];
-}
-
-function ThemeToggle() {
-  const [dark, toggle] = useTheme();
-  return (
-    <button
-      onClick={toggle}
-      aria-label="Toggle theme"
-      className="grid h-8 w-8 place-items-center rounded-lg border border-border text-fg-muted transition-colors hover:bg-surface-3 hover:text-fg"
-    >
-      {dark ? "☀️" : "🌙"}
-    </button>
-  );
 }
 
 /* ---------- file drop zone ---------- */
@@ -269,6 +238,12 @@ export default function Home() {
               </button>
             ))}
           </div>
+          <Link
+            href="/how-it-works"
+            className="hidden text-sm font-medium text-fg-muted transition-colors hover:text-fg sm:block"
+          >
+            How it works
+          </Link>
           <a
             href="https://github.com/hassanzafarr/AgentReplay"
             className="hidden text-fg-subtle transition-colors hover:text-fg sm:block"
@@ -302,6 +277,12 @@ export default function Home() {
               >
                 or try a sample trace →
               </button>
+              <Link
+                href="/how-it-works"
+                className="mx-auto mt-6 rounded-full border border-border bg-surface-2 px-3 py-1 text-xs text-fg-muted transition-colors hover:border-accent/50 hover:text-fg"
+              >
+                New here? See how AgentReplay works in 3 minutes
+              </Link>
             </div>
           ) : (
             <>

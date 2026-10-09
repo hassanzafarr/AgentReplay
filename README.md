@@ -8,7 +8,7 @@
 ![LangGraph](https://img.shields.io/badge/LangGraph-1.x-purple)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**[Live dashboard demo →](https://replay-agent.vercel.app)** · click "try a sample trace", no install needed
+**[Live dashboard demo →](https://replay-agent.vercel.app)** · **[How it works (visual walkthrough) →](https://replay-agent.vercel.app/how-it-works)**
 
 AgentReplay is a deterministic record/replay and regression-testing harness for
 [LangGraph](https://github.com/langchain-ai/langgraph) agents. It works like snapshot
