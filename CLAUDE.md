@@ -14,6 +14,8 @@ Full spec: [AGENTREPLAY_PLAN.md](AGENTREPLAY_PLAN.md).
 - **Phase 2 (replayer + divergence): DONE — 92/92 tests pass.**
 - **Phase 3 (pytest plugin + CI): DONE — 100/100 tests pass.**
 - **Phase 4 (dashboard + polish): DONE.**
+- **Phase 5a (OTel/Langfuse export): DONE — 125/125 tests pass.**
+- **Phase 5b (schema v2: latency, tokens, model id, node): DONE — 148/148 tests pass, verified in Langfuse Cloud.**
 
 ### What Phase 1 built (2026-06-27)
 - `agentreplay/schema/trace.py` — Pydantic v2 models: 4 event types as discriminated
@@ -86,7 +88,11 @@ Full spec: [AGENTREPLAY_PLAN.md](AGENTREPLAY_PLAN.md).
 - **D3 Trace = single JSON/run: `{schema_version, run_id, created_at, events[], blobs{}}`.**
   Events typed (`llm_call`/`tool_call`/`clock`/`random`), each with global `seq`
   ordering index (handles async), `ts`, `hash`. Large blobs content-addressed in
-  `blobs{}` to fight bloat. All Pydantic. **schema_version frozen at 1; changes are breaking.**
+  `blobs{}` to fight bloat. All Pydantic. **Versions are additive-only (user decision
+  2026-10-18):** a new version may only add optional fields defaulting to None, so every
+  older trace still loads and keeps its own `schema_version`. Readers reject versions newer
+  than `SCHEMA_VERSION` (Pydantic would otherwise drop unknown fields silently). v1 → v2 added
+  `start_ts`/`duration_ms`/`node` (LLM + tool) and `model_id`/`usage` (LLM).
 - **D4 Divergence = tiered: structural (graph path) + tool-call (free) lead;
   semantic LLM-judge opt-in (costs tokens).** Rejected exact text diff (brittle).
 - **D5 Clock/RNG = virtualize within run scope via context manager**, record each
@@ -105,6 +111,10 @@ Full spec: [AGENTREPLAY_PLAN.md](AGENTREPLAY_PLAN.md).
 - LangGraph-only. No CrewAI / raw OpenAI loops.
 - Replay assumes read-mostly tools; write side effects not sandboxed (future work).
 - Final-message replay only; no token-stream replay.
+- **Native LLM tool-calling is not recorded/replayed:** the interceptor stores only
+  `AIMessage.content`, and replay returns `AIMessage(content=...)`, so `tool_calls` are lost.
+  Agents that route on `tool_calls` (ToolNode / ReAct) diverge on replay. Tests call tools
+  directly from nodes. Biggest gap for real-world agents — fix before importer (step 4).
 - Node-name-based structural diff: refactors that rename nodes create diff noise.
 - Calls that bypass `BaseChatModel` (raw SDK) aren't intercepted — surface as missing events.
 
@@ -123,8 +133,54 @@ Full spec: [AGENTREPLAY_PLAN.md](AGENTREPLAY_PLAN.md).
 - `agentreplay/cli.py` — `agentreplay serve [--port N]` starts dashboard via npm run dev
 - `README.md` — updated with full architecture, quick-start, all phases done, non-goals
 
+## What Phase 5a built (2026-10-18) — OTel/Langfuse export (observability plan step 1/4)
+- `agentreplay/integrations/otel.py` — `export_trace(trace, tracer_provider=, include_content=,
+  environment=)` turns a Trace into OTel spans post-hoc (root `agentreplay.run` + `chat <model>` /
+  `execute_tool <name>` children; clock/RNG → root span events). GenAI semconv + `langfuse.*` attrs.
+  Content withheld unless opted in (PII). Start times inferred from previous event `ts`
+  (schema v1 has no start time) → `agentreplay.timing.inferred=true`.
+  `otlp_tracer_provider()`, `langfuse_otlp_config()` (env → endpoint + Basic auth),
+  `ResultTrackingExporter` (OTel exporters log failures, don't raise → CLI exit code).
+- `agentreplay export <trace|dir>... [--endpoint|--langfuse|--console] [--header K=V]
+  [--include-content] [--environment NAME]`.
+- OTel is optional extra `agentreplay[otel]`, imported lazily; core never needs it.
+- 25 tests in `test_otel_export.py`. 125/125 total. Verified live against a local OTLP/HTTP sink.
+
+## What Phase 5b built (2026-10-18) — schema v2 (observability plan step 2/4)
+- `schema/trace.py` — `SCHEMA_VERSION=2`; `TokenUsage`; optional `start_ts`, `duration_ms`, `node`
+  on LLM + tool events, `model_id` + `usage` on LLM events; validator rejects future versions.
+- `recorder/context.py` — `CallTimer` (wall-clock start + `perf_counter` duration) and
+  `current_node()` (run_manager metadata → LangChain `var_child_runnable_config` fallback; the
+  fallback is what tools and sync-models-in-async-nodes need).
+- `recorder/interceptor.py` — records timing, node, `model_id` (response_metadata → llm_output →
+  inner model attr) and `usage` (from `usage_metadata`). `tool_wrapper.py` — timing + node, also
+  on errors. `replay_engine.py` — replay events get node + timing but **no usage/model_id**
+  (replay spends no tokens; exported replays must not look like cost).
+- `integrations/otel.py` — measured timing when present (`timing.inferred=false`), one span per
+  consecutive node run, `gen_ai.request/response.model`, `gen_ai.usage.input/output_tokens`;
+  cache counts under `agentreplay.usage.*` (Langfuse sums all `gen_ai.usage.*` keys).
+- `cli.py show` prints node / ms / model / tokens. Dashboard `types.ts` + `EventDetail.tsx` show them.
+- Divergence diff unchanged: compares behaviour only, so metric differences never diverge.
+- 23 new tests (`test_v2_capture.py`, v2 cases in `test_schema.py`, `test_otel_export.py`).
+  148/148 total. 4 bundled v1 golden traces still replay clean.
+
+### Verified against real Langfuse Cloud (EU, 2026-10-18)
+- Keys live in `.env` at repo root (gitignored; template `.env.example`). Load in bash with
+  `set -a; source <(tr -d '\r' < .env); set +a` — never print values.
+- Exported tree renders correctly: chat → GENERATION, tool → TOOL, nodes/root → SPAN; model id
+  and usage (input/output/total) mapped; cache tokens not double-counted; environment tag works.
+- **Must send `x-langfuse-ingestion-version: 4`** (now in `langfuse_otlp_config`) or OTel data
+  can lag up to 15 min.
+- **Langfuse drops spans older than its retention window silently** (export returns success).
+  → `export_trace(shift_to_now=True)` / `--shift-to-now`; CLI warns for traces > 7 days old.
+- **Orgs created on/after 2026-09-16 get HTTP 410 on legacy `GET /api/public/traces*`.** Reads
+  must use `GET /api/public/v2/observations` (requires `fromStartTime`/`toStartTime`, filter by
+  `traceId`, `fields=core,basic,model,usage,metrics,io`). The step-4 importer must use this API.
+- Cost shows None for made-up model ids; real Claude ids should price via Langfuse's model table
+  (unverified — no ANTHROPIC_API_KEY).
+
 ## Next action
-Project complete (v1). All 4 phases done. Possible follow-ups:
-- Demo GIF / screenshots for README
-- PyPI publish (`pip install agentreplay`)
-- CrewAI / raw OpenAI support (Phase 5)
+Observability plan steps remaining:
+3. Divergence results → Langfuse scores from pytest plugin.
+4. Langfuse trace → AgentReplay trace importer.
+Other follow-ups: demo GIF, PyPI publish, CrewAI / raw OpenAI support.

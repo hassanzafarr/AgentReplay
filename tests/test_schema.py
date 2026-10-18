@@ -1,7 +1,8 @@
 """Tests for agentreplay.schema.trace — Pydantic models.
 
-Proves: models serialize/deserialize correctly, schema version is frozen,
-discriminated union works, blob content-addressing round-trips.
+Proves: models serialize/deserialize correctly, v1 traces load under the v2
+schema, newer schema versions are rejected, discriminated union works, blob
+content-addressing round-trips.
 
 Does NOT cover: runtime behavior of recorder/replayer using these models.
 """
@@ -11,6 +12,8 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
+import pytest
+
 from agentreplay.schema.trace import (
     SCHEMA_VERSION,
     ClockEvent,
@@ -18,6 +21,7 @@ from agentreplay.schema.trace import (
     LLMCallEvent,
     MessageRecord,
     RandomEvent,
+    TokenUsage,
     ToolCallEvent,
     Trace,
     content_hash,
@@ -40,14 +44,72 @@ class TestContentHash:
 
 
 class TestSchemaVersion:
-    def test_frozen_at_1(self):
-        """Schema version must be 1 — changes are breaking (D3)."""
-        assert SCHEMA_VERSION == 1
+    def test_current_version_is_2(self):
+        """v2 is the additive timing/usage/node release (D3 history)."""
+        assert SCHEMA_VERSION == 2
 
     def test_trace_default_version(self):
-        """New traces default to the frozen version."""
+        """New traces are written at the current version."""
         t = Trace()
-        assert t.schema_version == 1
+        assert t.schema_version == SCHEMA_VERSION
+
+    def test_v1_trace_loads_unchanged(self):
+        """A v1 file (no v2 fields) still validates, keeps version 1, and
+        every v2 field reads as None — old golden traces keep working.
+
+        Does not cover: replaying v1 traces (the example-trace regression
+        suite does that).
+        """
+        v1 = {
+            "schema_version": 1,
+            "run_id": "r1",
+            "created_at": "2026-01-01T00:00:00Z",
+            "events": [
+                {"event_type": "llm_call", "seq": 0, "ts": "2026-01-01T00:00:01Z",
+                 "hash": "h", "model_name": "m", "input_messages": [], "output": "o"},
+                {"event_type": "tool_call", "seq": 1, "ts": "2026-01-01T00:00:02Z",
+                 "hash": "t", "tool_name": "search", "input_args": {}, "output": "r"},
+            ],
+            "blobs": {},
+            "metadata": {},
+        }
+        trace = Trace.model_validate(v1)
+        llm, tool = trace.events
+
+        assert trace.schema_version == 1
+        for field in ("start_ts", "duration_ms", "node", "model_id", "usage"):
+            assert getattr(llm, field) is None
+        for field in ("start_ts", "duration_ms", "node"):
+            assert getattr(tool, field) is None
+
+    def test_future_version_rejected(self):
+        """Pydantic would silently drop unknown v3 fields; we refuse instead."""
+        with pytest.raises(ValueError, match="upgrade agentreplay"):
+            Trace.model_validate({"schema_version": SCHEMA_VERSION + 1})
+
+    def test_v2_fields_roundtrip(self):
+        """Timing, node, model id and usage survive JSON round-trip."""
+        start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        trace = Trace()
+        trace.add_event(LLMCallEvent(
+            seq=0,
+            start_ts=start,
+            duration_ms=812.5,
+            node="agent",
+            model_id="claude-x",
+            usage=TokenUsage(
+                input_tokens=100, output_tokens=20, total_tokens=120, cache_read_tokens=80,
+            ),
+        ))
+        restored = Trace.model_validate(json.loads(json.dumps(trace.model_dump(mode="json"))))
+        event = restored.events[0]
+
+        assert event.start_ts == start
+        assert event.duration_ms == 812.5
+        assert event.node == "agent"
+        assert event.model_id == "claude-x"
+        assert event.usage.cache_read_tokens == 80
+        assert event.usage.cache_creation_tokens is None
 
 
 class TestEventModels:
@@ -131,7 +193,7 @@ class TestTrace:
         json_str = json.dumps(data, default=str)
         restored = Trace.model_validate(json.loads(json_str))
 
-        assert restored.schema_version == 1
+        assert restored.schema_version == SCHEMA_VERSION
         assert len(restored.events) == 4
         assert restored.metadata["agent"] == "test"
 

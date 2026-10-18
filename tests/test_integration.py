@@ -26,7 +26,7 @@ from langgraph.graph import END, StateGraph
 
 import agentreplay
 from agentreplay.recorder.trace_writer import TraceWriter
-from agentreplay.schema.trace import EventType
+from agentreplay.schema.trace import SCHEMA_VERSION, EventType
 
 
 # -------------------------------------------------------------------
@@ -143,7 +143,7 @@ class TestEndToEndRecord:
 
         trace_path = wrapped.last_trace_path
         restored = TraceWriter.read(trace_path)
-        assert restored.schema_version == 1
+        assert restored.schema_version == SCHEMA_VERSION
         assert len(restored.events) == 2
 
 

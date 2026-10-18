@@ -35,6 +35,7 @@ from langchain_core.tools import BaseTool, StructuredTool
 
 from agentreplay.recorder.clock import VirtualClock
 from agentreplay.recorder.collector import TraceCollector
+from agentreplay.recorder.context import CallTimer, current_node
 from agentreplay.recorder.interceptor import _hash_messages, _messages_to_records
 from agentreplay.recorder.rng import VirtualRNG
 from agentreplay.recorder.tool_wrapper import _normalize_args, _safe_serialize
@@ -153,6 +154,10 @@ class _ReplayChatModel(BaseChatModel):
 
     The inner model is never invoked. It is stored only so ``_llm_type``
     reports correctly and the graph builder receives a valid ``BaseChatModel``.
+
+    Replay events record ``node`` and timing (both describe what the new code
+    did) but leave ``usage``/``model_id`` empty: replay spends no tokens, and
+    copying recorded usage would make exported replays look like real cost.
     """
 
     inner: BaseChatModel
@@ -172,6 +177,7 @@ class _ReplayChatModel(BaseChatModel):
         run_manager: Any = None,
         **kwargs: Any,
     ) -> ChatResult:
+        timer = CallTimer()
         input_hash = _hash_messages(messages)
         result = self.matcher.lookup(EventType.LLM_CALL, input_hash)
 
@@ -195,6 +201,9 @@ class _ReplayChatModel(BaseChatModel):
             input_messages=_messages_to_records(messages),
             output=output_text,
             kwargs={k: str(v) for k, v in kwargs.items()},
+            start_ts=timer.start_ts,
+            duration_ms=timer.elapsed_ms(),
+            node=current_node(run_manager),
         )
         self.replay_collector.add_event(new_event)
 
@@ -230,6 +239,7 @@ def _wrap_tool_for_replay(
 
         @wraps(original_func)
         def replay_func(*args: Any, **kwargs: Any) -> Any:
+            timer = CallTimer()
             input_args = _normalize_args(args, kwargs)
             tool_hash = content_hash({"tool": tool.name, "input": input_args})
 
@@ -248,6 +258,9 @@ def _wrap_tool_for_replay(
                 input_args=input_args,
                 output=recorded_event.output,
                 error=recorded_event.error,
+                start_ts=timer.start_ts,
+                duration_ms=timer.elapsed_ms(),
+                node=current_node(),
             ))
             return recorded_event.output
 
@@ -292,6 +305,7 @@ def _wrap_invoke_for_replay(
     original_invoke = tool.invoke
 
     def replay_invoke(input: Any, **kwargs: Any) -> Any:
+        timer = CallTimer()
         input_args = {"input": _safe_serialize(input)}
         tool_hash = content_hash({"tool": tool.name, "input": input_args})
 
@@ -310,6 +324,9 @@ def _wrap_invoke_for_replay(
             input_args=input_args,
             output=recorded_event.output,
             error=recorded_event.error,
+            start_ts=timer.start_ts,
+            duration_ms=timer.elapsed_ms(),
+            node=current_node(),
         ))
         return recorded_event.output
 

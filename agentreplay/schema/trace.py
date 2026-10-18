@@ -1,8 +1,15 @@
 """Pydantic models for AgentReplay trace files.
 
 This is the contract between the recorder and replayer. Every other module
-depends on these types. The schema is versioned from day one; bumping
-``schema_version`` is a breaking change (Decision D3).
+depends on these types. The schema is versioned from day one (Decision D3).
+
+Version history:
+- v1: the four event types, blobs, metadata.
+- v2: *additive only*. LLM and tool events gain optional ``start_ts``,
+  ``duration_ms`` and ``node``; LLM events also gain ``model_id`` and
+  ``usage``. Every new field defaults to ``None``, so v1 traces load
+  unchanged and keep ``schema_version=1``. Traces from a *newer* schema
+  are rejected rather than silently stripped of fields we don't know.
 
 Design choices:
 - Discriminated union on ``event_type`` keeps the event list heterogeneous but
@@ -24,15 +31,15 @@ from enum import Enum
 from typing import Annotated, Any, Literal, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION: int = 1
-"""Frozen at 1. Any change to event shapes is a breaking schema change."""
+SCHEMA_VERSION: int = 2
+"""Version written by this recorder. Readers accept any version up to this."""
 
 BLOB_THRESHOLD: int = 4096
 """Payloads larger than this (bytes, UTF-8) are stored in Trace.blobs."""
@@ -77,6 +84,21 @@ class MessageRecord(BaseModel):
     content: str
 
 
+class TokenUsage(BaseModel):
+    """Token counts the provider reported for one LLM call (schema v2).
+
+    Taken from LangChain's standard ``AIMessage.usage_metadata``, so it works
+    for any provider that reports usage. ``input_tokens`` includes cached
+    tokens; the cache fields break them out (Anthropic prompt caching).
+    """
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    cache_read_tokens: int | None = None
+    cache_creation_tokens: int | None = None
+
+
 class LLMCallEvent(BaseModel):
     """A single LLM invocation (prompt in, completion out)."""
 
@@ -95,6 +117,16 @@ class LLMCallEvent(BaseModel):
     # in Trace.blobs under these keys; the inline field is set to a placeholder.
     input_blob_key: str | None = None
     output_blob_key: str | None = None
+    # --- schema v2 (optional; absent from v1 traces) ---
+    start_ts: datetime | None = Field(None, description="Wall-clock time the call started")
+    duration_ms: float | None = Field(None, description="Measured latency (monotonic clock)")
+    node: str | None = Field(None, description="LangGraph node that made the call")
+    model_id: str | None = Field(
+        None, description="Provider model id from the response, e.g. 'claude-...'",
+    )
+    usage: TokenUsage | None = Field(
+        None, description="Token counts; None if the provider reported none or on replay",
+    )
 
 
 class ToolCallEvent(BaseModel):
@@ -108,6 +140,10 @@ class ToolCallEvent(BaseModel):
     input_args: dict[str, Any] = Field(default_factory=dict)
     output: str = ""
     error: str | None = None
+    # --- schema v2 (optional; absent from v1 traces) ---
+    start_ts: datetime | None = Field(None, description="Wall-clock time the call started")
+    duration_ms: float | None = Field(None, description="Measured latency (monotonic clock)")
+    node: str | None = Field(None, description="LangGraph node that made the call")
 
 
 class ClockEvent(BaseModel):
@@ -170,6 +206,18 @@ class Trace(BaseModel):
         default_factory=dict,
         description="Content-addressed storage for large payloads",
     )
+
+    @field_validator("schema_version")
+    @classmethod
+    def _reject_future_versions(cls, v: int) -> int:
+        """Pydantic drops unknown fields silently, so loading a newer trace
+        would quietly lose data. Fail loudly instead."""
+        if v > SCHEMA_VERSION:
+            raise ValueError(
+                f"trace uses schema_version {v}, but this agentreplay only "
+                f"understands up to {SCHEMA_VERSION}; upgrade agentreplay"
+            )
+        return v
 
     def add_event(self, event: TraceEvent) -> None:
         """Append an event, maintaining seq ordering invariant."""

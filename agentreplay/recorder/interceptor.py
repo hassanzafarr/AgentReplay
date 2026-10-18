@@ -25,16 +25,59 @@ from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 from agentreplay.recorder.collector import TraceCollector
+from agentreplay.recorder.context import CallTimer, current_node
 from agentreplay.schema.trace import (
     LLMCallEvent,
     MessageRecord,
+    TokenUsage,
     content_hash,
 )
+
+# Keys providers use for the served model id, in LangChain's response_metadata
+# / llm_output (Anthropic: "model" + "model_name", OpenAI: "model_name").
+_MODEL_ID_KEYS = ("model_name", "model", "model_id")
 
 
 def _messages_to_records(messages: list[BaseMessage]) -> list[MessageRecord]:
     """Convert LangChain messages to our stable, hashable format."""
     return [MessageRecord(type=m.type, content=m.content) for m in messages]
+
+
+def _model_id(
+    response: BaseMessage, result: ChatResult, inner: BaseChatModel,
+) -> str | None:
+    """Real provider model id, e.g. ``claude-...`` (schema v2).
+
+    The response is ground truth — it names the model that actually served
+    the call, even behind aliases. Fall back to the configured model on the
+    wrapped instance. ``_llm_type`` ("anthropic-chat") is a family, not an id.
+    """
+    sources = [getattr(response, "response_metadata", None) or {}, result.llm_output or {}]
+    for source in sources:
+        for key in _MODEL_ID_KEYS:
+            value = source.get(key)
+            if isinstance(value, str) and value:
+                return value
+    for attr in _MODEL_ID_KEYS:
+        value = getattr(inner, attr, None)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _token_usage(response: BaseMessage) -> TokenUsage | None:
+    """Token counts from LangChain's provider-neutral ``usage_metadata``."""
+    usage = getattr(response, "usage_metadata", None)
+    if not usage:
+        return None
+    details = usage.get("input_token_details") or {}
+    return TokenUsage(
+        input_tokens=usage.get("input_tokens", 0),
+        output_tokens=usage.get("output_tokens", 0),
+        total_tokens=usage.get("total_tokens", 0),
+        cache_read_tokens=details.get("cache_read"),
+        cache_creation_tokens=details.get("cache_creation"),
+    )
 
 
 def _hash_messages(messages: list[BaseMessage]) -> str:
@@ -105,10 +148,11 @@ class RecordingChatModel(BaseChatModel):
         """Delegate to inner model and capture the call."""
         assert self.collector is not None, "collector required in record mode"
 
+        timer = CallTimer()
         result = self.inner._generate(
             messages, stop=stop, run_manager=run_manager, **kwargs,
         )
-        self._capture_event(messages, result, kwargs)
+        self._capture_event(messages, result, kwargs, timer, current_node(run_manager))
         return result
 
     async def _arecord(
@@ -121,10 +165,11 @@ class RecordingChatModel(BaseChatModel):
         """Async delegate to inner model and capture the call."""
         assert self.collector is not None, "collector required in record mode"
 
+        timer = CallTimer()
         result = await self.inner._agenerate(
             messages, stop=stop, run_manager=run_manager, **kwargs,
         )
-        self._capture_event(messages, result, kwargs)
+        self._capture_event(messages, result, kwargs, timer, current_node(run_manager))
         return result
 
     def _capture_event(
@@ -132,13 +177,17 @@ class RecordingChatModel(BaseChatModel):
         messages: list[BaseMessage],
         result: ChatResult,
         kwargs: dict[str, Any],
+        timer: CallTimer,
+        node: str | None,
     ) -> None:
         """Build and store an LLMCallEvent from a completed call."""
         assert self.collector is not None
+        duration_ms = timer.elapsed_ms()
 
         msg_records = _messages_to_records(messages)
         input_hash = _hash_messages(messages)
-        output_text = result.generations[0].message.content
+        response = result.generations[0].message
+        output_text = response.content
 
         # Content-address large payloads.
         input_blob_key = self.collector.store_blob(
@@ -155,6 +204,11 @@ class RecordingChatModel(BaseChatModel):
             kwargs={k: str(v) for k, v in kwargs.items()},  # stringify for JSON safety
             input_blob_key=input_blob_key,
             output_blob_key=output_blob_key,
+            start_ts=timer.start_ts,
+            duration_ms=duration_ms,
+            node=node,
+            model_id=_model_id(response, result, self.inner),
+            usage=_token_usage(response),
         )
         self.collector.add_event(event)
 

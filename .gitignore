@@ -44,3 +44,6 @@ dashboard/out/
 
 # Personal notes
 EXPLAINER.md
+
+# Local secrets (Langfuse / Anthropic keys) — never commit
+.env
