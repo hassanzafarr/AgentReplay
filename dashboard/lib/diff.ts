@@ -188,13 +188,3 @@ export function diffTraces(traceA: Trace, traceB: Trace): DivergenceReport {
     stats,
   };
 }
-
-export function resolveBlobs(trace: Trace): Trace {
-  const events = trace.events.map((e) => {
-    if (e.event_type === "llm_call" && e.output_blob_key && trace.blobs[e.output_blob_key]) {
-      return { ...e, output: trace.blobs[e.output_blob_key] };
-    }
-    return e;
-  });
-  return { ...trace, events };
-}

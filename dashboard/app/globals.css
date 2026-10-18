@@ -3,86 +3,190 @@
 /* Class-based dark mode: toggled by `.dark` on <html> (see layout.tsx script). */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Semantic tokens — flip with theme. Components use bg-surface / text-fg / etc. */
+/* Card Deck world. A run is a deck of punched cards on a desk.
+   - desk: the ground the deck lies on (walnut in dark, machine-room steel in light)
+   - card: manila stock; it does not change with the theme, paper is paper
+   - listing: line-printer paper for long text
+   Every *-ink / *-desk text token clears WCAG AA on the surface it is named for. */
 :root {
-  --surface: #ffffff;
-  --surface-2: #f7f7fb;
-  --surface-3: #eef0f6;
-  --border: #e5e7eb;
-  --border-strong: #d1d5db;
-  --fg: #18181b;
-  --fg-muted: #6b7280;
-  --fg-subtle: #9ca3af;
-  --accent: #7c3aed;
-  --accent-fg: #ffffff;
-  --code-bg: #0f172a;
-  --code-fg: #e2e8f0;
+  --desk: #d3d6d3;
+  --desk-2: #c7cbc7;
+  --desk-line: #a9afa9;
+  --on-desk: #1b1b1b;
+  --on-desk-muted: #4a4f4c;
+  --ok-desk: #24573f;
+  --danger-desk: #9e2a25;
+  --focus: #1e5bd8;
+  /* What a punched hole shows. Darker than the light desk so punches read on manila. */
+  --hole: #2e3330;
 }
 
 .dark {
-  --surface: #0b0d12;
-  --surface-2: #12151c;
-  --surface-3: #1a1e27;
-  --border: #262b36;
-  --border-strong: #333a48;
-  --fg: #e7e9ee;
-  --fg-muted: #9aa3b2;
-  --fg-subtle: #6b7280;
-  --accent: #8b5cf6;
-  --accent-fg: #ffffff;
-  --code-bg: #05070b;
-  --code-fg: #d7dce5;
+  --desk: #24211d;
+  --desk-2: #2f2b26;
+  --desk-line: #4a443c;
+  --on-desk: #efe4c8;
+  --on-desk-muted: #b9ae94;
+  --ok-desk: #8fc7a6;
+  --danger-desk: #f08a7e;
+  --focus: #8fb6ff;
+  --hole: #14120f;
+}
+
+:root {
+  --card: #efe4c8;
+  --card-2: #e5d7b4;
+  --card-line: #c9ba95;
+  --ink: #1b1b1b;
+  --ink-muted: #5e5442;
+  --print: #a82e29; /* AA on card and on card-2 (hover) */
+
+  --listing: #f7f8f2;
+  --listing-bar: #e3eedc;
+  --del-bg: #f4d6d2;
+  --del-ink: #8e1f1a;
+  --add-bg: #d3e8d5;
+  --add-ink: #1e5631;
+
+  /* Sort-stripe colours (fills) and their text shades for use on card stock. */
+  --ev-llm: #2f6b4f;
+  --ev-llm-ink: #2f6b4f;
+  --ev-tool: #c9a227;
+  --ev-tool-ink: #6f5500;
+  --ev-clock: #4e6fa8;
+  --ev-clock-ink: #36578f;
+  --ev-rng: #8c4a7a;
+  --ev-rng-ink: #8c4a7a;
 }
 
 @theme inline {
-  --color-surface: var(--surface);
-  --color-surface-2: var(--surface-2);
-  --color-surface-3: var(--surface-3);
-  --color-border: var(--border);
-  --color-border-strong: var(--border-strong);
-  --color-fg: var(--fg);
-  --color-fg-muted: var(--fg-muted);
-  --color-fg-subtle: var(--fg-subtle);
-  --color-accent: var(--accent);
-  --color-accent-fg: var(--accent-fg);
-  --color-code-bg: var(--code-bg);
-  --color-code-fg: var(--code-fg);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-desk: var(--desk);
+  --color-desk-2: var(--desk-2);
+  --color-desk-line: var(--desk-line);
+  --color-on-desk: var(--on-desk);
+  --color-on-desk-muted: var(--on-desk-muted);
+  --color-ok-desk: var(--ok-desk);
+  --color-danger-desk: var(--danger-desk);
+  --color-card: var(--card);
+  --color-card-2: var(--card-2);
+  --color-card-line: var(--card-line);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-print: var(--print);
+  --color-listing: var(--listing);
+  --color-del-bg: var(--del-bg);
+  --color-del-ink: var(--del-ink);
+  --color-add-bg: var(--add-bg);
+  --color-add-ink: var(--add-ink);
+  --color-ev-llm: var(--ev-llm);
+  --color-ev-llm-ink: var(--ev-llm-ink);
+  --color-ev-tool: var(--ev-tool);
+  --color-ev-tool-ink: var(--ev-tool-ink);
+  --color-ev-clock: var(--ev-clock);
+  --color-ev-clock-ink: var(--ev-clock-ink);
+  --color-ev-rng: var(--ev-rng);
+  --color-ev-rng-ink: var(--ev-rng-ink);
+  --font-sans: var(--font-archivo);
+  --font-mono: var(--font-fragment-mono);
 }
 
 html {
-  color-scheme: light dark;
+  color-scheme: light;
+}
+html.dark {
+  color-scheme: dark;
 }
 
 body {
-  background: var(--surface);
-  color: var(--fg);
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  background: var(--desk);
+  color: var(--on-desk);
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  caret-color: var(--print);
 }
 
-/* Subtle ambient gradient behind the app shell. */
-.app-bg {
-  background:
-    radial-gradient(60rem 40rem at 100% -10%, color-mix(in oklab, var(--accent) 10%, transparent), transparent 70%),
-    radial-gradient(50rem 30rem at -10% 0%, color-mix(in oklab, #06b6d4 8%, transparent), transparent 65%);
+::selection {
+  background: color-mix(in oklab, var(--ev-tool) 45%, transparent);
 }
 
-/* Thin, theme-aware scrollbars for inner panels. */
+/* One focus ring. Desk and card need different hues to clear 3:1, so cards re-point it. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Manila card stock with the clipped top-left corner every IBM card carried. */
+.punchcard {
+  --focus: #1e5bd8;
+  background: var(--card);
+  color: var(--ink);
+  clip-path: polygon(14px 0, 100% 0, 100% 100%, 0 100%, 0 14px);
+}
+
+/* Card-print lettering: the condensed caps printed on card fields. */
+.cardprint {
+  font-stretch: 75%;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 650;
+}
+
+/* Line-printer listing: two lines on green bar, two lines plain, to keep the eye on its row. */
+.listing {
+  --lh: 1.25rem;
+  background-color: var(--listing);
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--listing-bar) 0 calc(var(--lh) * 2),
+    transparent calc(var(--lh) * 2) calc(var(--lh) * 4)
+  );
+  background-origin: content-box;
+  color: var(--ink);
+  line-height: var(--lh);
+}
+.listing-plain {
+  background-color: var(--listing);
+  color: var(--ink);
+}
+
+/* Unpunched positions: the faint printed grid behind a punch field (pitch set inline). */
+.punch-grid {
+  background-image: radial-gradient(circle, color-mix(in oklab, var(--ink) 22%, transparent) 0.7px, transparent 1px);
+  background-repeat: repeat;
+  background-origin: content-box;
+}
+
 .scroll-thin {
   scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
+  scrollbar-color: var(--desk-line) transparent;
 }
 .scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
 .scroll-thin::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
+  background: var(--desk-line);
   border-radius: 9999px;
 }
 .scroll-thin::-webkit-scrollbar-track { background: transparent; }
 
-@keyframes fade-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+/* The one authored motion: a card slides out of the deck when it is picked. */
+.deck-card {
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), filter 220ms ease-out;
 }
-.animate-fade-in { animation: fade-in 0.25s ease-out both; }
+.deck-card[aria-pressed="true"],
+.deck-card[data-lifted] {
+  transform: translateX(14px);
+  filter: drop-shadow(-4px 6px 10px rgb(0 0 0 / 0.35));
+}
+
+/* Cards settle into place from already visible; the lift on selection is the authored moment. */
+@keyframes deal {
+  from { transform: translateY(5px); }
+  to { transform: none; }
+}
+.animate-deal { animation: deal 0.28s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .deck-card { transition: none; }
+  .deck-card[aria-pressed="true"],
+  .deck-card[data-lifted] { transform: none; }
+  .animate-deal { animation: none; }
+}

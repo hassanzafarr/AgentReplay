@@ -2,39 +2,46 @@
 
 import { useState } from "react";
 import type { TraceEvent } from "@/lib/types";
+import { EVENT_STYLES } from "@/lib/events";
+import { PointerIcon } from "./Icons";
+import PunchField from "./PunchField";
+import { punchSource } from "@/lib/punch";
 
 function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const flash = (s: "copied" | "failed") => {
+    setState(s);
+    setTimeout(() => setState("idle"), 1400);
+  };
   return (
     <button
+      type="button"
+      aria-live="polite"
       onClick={() => {
-        navigator.clipboard?.writeText(text).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1200);
-        });
+        // Clipboard API is missing on insecure origins (e.g. a LAN IP); say so instead of failing silently.
+        if (!navigator.clipboard) return flash("failed");
+        navigator.clipboard.writeText(text).then(() => flash("copied"), () => flash("failed"));
       }}
-      className="rounded px-1.5 py-0.5 text-[10px] font-medium text-fg-subtle ring-1 ring-inset ring-border transition-colors hover:text-fg hover:ring-border-strong"
+      className="cardprint min-h-6 border border-card-line px-2 text-[11px] text-ink-muted transition-colors hover:border-ink hover:text-ink"
     >
-      {copied ? "copied ✓" : "copy"}
+      {state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy"}
     </button>
   );
 }
 
-function Section({
-  title,
+function Field({
+  label,
   action,
   children,
 }: {
-  title: string;
+  label: string;
   action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
-          {title}
-        </span>
+      <div className="flex items-center justify-between gap-2">
+        <span className="cardprint text-[11px] text-ink-muted">{label}</span>
         {action}
       </div>
       {children}
@@ -42,16 +49,14 @@ function Section({
   );
 }
 
-function CodeBlock({ text, maxLines = 24 }: { text: string; maxLines?: number }) {
+/* Long text prints as a line-printer listing; very long text is cut with a count. */
+function Listing({ text, maxLines = 24 }: { text: string; maxLines?: number }) {
   const lines = text.split("\n");
-  const shown = lines.slice(0, maxLines);
   const clipped = lines.length > maxLines;
   return (
-    <pre className="scroll-thin max-h-72 overflow-auto whitespace-pre-wrap rounded-lg bg-code-bg p-3 text-xs leading-relaxed text-code-fg">
-      {shown.join("\n")}
-      {clipped && (
-        <span className="text-fg-subtle">{"\n"}… ({lines.length - maxLines} more lines)</span>
-      )}
+    <pre className="listing scroll-thin max-h-80 overflow-auto whitespace-pre-wrap break-words border-y border-card-line px-3 py-2 font-mono text-[12.5px]">
+      {lines.slice(0, maxLines).join("\n")}
+      {clipped && <span className="text-ink-muted">{"\n"}… {lines.length - maxLines} more lines</span>}
     </pre>
   );
 }
@@ -63,100 +68,119 @@ interface Props {
 export default function EventDetail({ event }: Props) {
   if (!event) {
     return (
-      <div className="flex h-full min-h-48 flex-col items-center justify-center gap-2 p-8 text-center">
-        <span className="text-2xl opacity-40">👈</span>
-        <p className="text-sm text-fg-subtle">Select an event to inspect its payload.</p>
+      <div className="punchcard flex min-h-56 flex-col items-center justify-center gap-2 p-8 text-center">
+        <PointerIcon className="h-6 w-6 text-ink-muted" />
+        <p className="text-sm text-ink-muted">Pick a card from the deck to print its listing.</p>
       </div>
     );
   }
 
+  const style = EVENT_STYLES[event.event_type] ?? EVENT_STYLES.clock;
+
   return (
-    <div className="animate-fade-in flex flex-col gap-4 p-4" key={event.seq}>
-      <div className="flex flex-wrap items-center gap-2 border-b border-border pb-3">
-        <span className="font-mono text-sm font-bold text-fg">{event.event_type}</span>
-        <span className="rounded bg-surface-3 px-1.5 py-0.5 font-mono text-[11px] text-fg-muted">
-          seq {event.seq}
-        </span>
-        {event.hash && (
-          <span className="rounded bg-surface-3 px-1.5 py-0.5 font-mono text-[11px] text-fg-subtle">
-            {event.hash.slice(0, 10)}…
-          </span>
-        )}
-      </div>
-
-      {event.event_type === "llm_call" && (
-        <>
-          <Section title="Model">
-            <span className="font-mono text-sm text-fg">{event.model_name}</span>
-          </Section>
-          <Section title="Prompt">
-            <div className="flex flex-col gap-2">
-              {event.input_messages.map((m, i) => (
-                <div key={i} className="flex flex-col gap-1">
-                  <span className="font-mono text-[11px] text-accent">
-                    [{m.role ?? m.type ?? "msg"}]
-                  </span>
-                  <CodeBlock text={m.content} />
-                </div>
-              ))}
+    <article className="punchcard animate-deal flex" key={event.seq} aria-label={`${style.long}, seq ${event.seq}`}>
+      <span aria-hidden className={`w-2 shrink-0 ${style.stripe}`} />
+      <div className="flex min-w-0 flex-1 flex-col gap-4 p-5">
+        <header className="flex items-start gap-4 border-b-2 border-ink pb-3">
+          <div className="flex min-w-0 flex-1 flex-col gap-2">
+            <div className="flex flex-col">
+              <span className="font-mono text-xs text-print">SEQ {String(event.seq).padStart(2, "0")}</span>
+              <h3 className="cardprint text-2xl font-extrabold leading-tight tracking-wide text-ink">{style.long}</h3>
             </div>
-          </Section>
-          <Section title="Response" action={<CopyButton text={event.output} />}>
-            <CodeBlock text={event.output} />
-          </Section>
-          {Object.keys(event.kwargs ?? {}).length > 0 && (
-            <Section title="kwargs">
-              <CodeBlock text={JSON.stringify(event.kwargs, null, 2)} />
-            </Section>
-          )}
-        </>
-      )}
+            <div className="flex flex-wrap gap-1.5 font-mono text-[11px] text-ink-muted">
+            {/* Names the band: it punches a digest of input + answer, not the raw input hash. */}
+            <span className="border border-ink-muted/60 px-1.5 text-ink" title="Digest of this event's input and recorded answer">
+              punched {punchSource(event).slice(0, 12).toUpperCase()}
+            </span>
+            {event.hash && <span className="border border-card-line px-1.5">hash {event.hash.slice(0, 10)}…</span>}
+            {(event.event_type === "llm_call" || event.event_type === "tool_call") && (
+              <>
+                {event.node && <span className="border border-card-line px-1.5">node {event.node}</span>}
+                {event.duration_ms != null && (
+                  <span className="border border-card-line px-1.5">{Math.round(event.duration_ms)} ms</span>
+                )}
+              </>
+            )}
+            </div>
+          </div>
+          <PunchField source={punchSource(event)} />
+        </header>
 
-      {event.event_type === "tool_call" && (
-        <>
-          <Section title="Tool">
-            <span className="font-mono text-sm text-fg">{event.tool_name}</span>
-          </Section>
-          <Section
-            title="Input args"
-            action={<CopyButton text={JSON.stringify(event.input_args, null, 2)} />}
-          >
-            <CodeBlock text={JSON.stringify(event.input_args, null, 2)} />
-          </Section>
-          {event.error ? (
-            <Section title="Error">
-              <pre className="scroll-thin overflow-auto whitespace-pre-wrap rounded-lg bg-red-950/80 p-3 text-xs text-red-200 ring-1 ring-red-500/30">
-                {event.error}
-              </pre>
-            </Section>
-          ) : (
-            <Section title="Output" action={<CopyButton text={String(event.output ?? "")} />}>
-              <CodeBlock text={String(event.output ?? "(null)")} />
-            </Section>
-          )}
-        </>
-      )}
+        {event.event_type === "llm_call" && (
+          <>
+            <Field label="Model">
+              <span className="font-mono text-sm text-ink">{event.model_id ?? event.model_name}</span>
+            </Field>
+            {event.usage && (
+              <Field label="Tokens">
+                <span className="font-mono text-sm text-ink">
+                  {event.usage.input_tokens} in → {event.usage.output_tokens} out
+                  {event.usage.cache_read_tokens != null && ` (${event.usage.cache_read_tokens} cached)`}
+                </span>
+              </Field>
+            )}
+            <Field label="Prompt">
+              <div className="flex flex-col gap-2">
+                {event.input_messages.map((m, i) => (
+                  <div key={i} className="flex flex-col gap-1">
+                    <span className="font-mono text-[11px] text-print">[{m.role ?? m.type ?? "msg"}]</span>
+                    <Listing text={m.content} />
+                  </div>
+                ))}
+              </div>
+            </Field>
+            <Field label="Response" action={<CopyButton text={event.output} />}>
+              <Listing text={event.output} />
+            </Field>
+            {Object.keys(event.kwargs ?? {}).length > 0 && (
+              <Field label="kwargs">
+                <Listing text={JSON.stringify(event.kwargs, null, 2)} />
+              </Field>
+            )}
+          </>
+        )}
 
-      {event.event_type === "clock" && (
-        <Section title="Recorded time">
-          <span className="font-mono text-sm text-fg">{event.recorded_time}</span>
-        </Section>
-      )}
+        {event.event_type === "tool_call" && (
+          <>
+            <Field label="Tool">
+              <span className="font-mono text-sm text-ink">{event.tool_name}</span>
+            </Field>
+            <Field label="Input args" action={<CopyButton text={JSON.stringify(event.input_args, null, 2)} />}>
+              <Listing text={JSON.stringify(event.input_args, null, 2)} />
+            </Field>
+            {event.error ? (
+              <Field label="Error">
+                <pre className="listing-plain overflow-auto whitespace-pre-wrap border border-print px-3 py-2 font-mono text-[12.5px] text-del-ink">
+                  {event.error}
+                </pre>
+              </Field>
+            ) : (
+              <Field label="Output" action={<CopyButton text={String(event.output ?? "")} />}>
+                <Listing text={String(event.output ?? "(null)")} />
+              </Field>
+            )}
+          </>
+        )}
 
-      {event.event_type === "random" && (
-        <>
-          <Section title="Source">
-            <span className="font-mono text-sm text-fg">{event.source}</span>
-          </Section>
-          <Section title="Value">
-            <span className="break-all font-mono text-sm text-fg">{event.value}</span>
-          </Section>
-        </>
-      )}
+        {event.event_type === "clock" && (
+          <Field label="Recorded time">
+            <span className="font-mono text-sm text-ink">{event.recorded_time}</span>
+          </Field>
+        )}
 
-      <p className="mt-auto border-t border-border pt-3 font-mono text-[11px] text-fg-subtle">
-        ts: {event.ts}
-      </p>
-    </div>
+        {event.event_type === "random" && (
+          <>
+            <Field label="Source">
+              <span className="font-mono text-sm text-ink">{event.source}</span>
+            </Field>
+            <Field label="Value">
+              <span className="break-all font-mono text-sm text-ink">{event.value}</span>
+            </Field>
+          </>
+        )}
+
+        <p className="mt-auto border-t border-card-line pt-3 font-mono text-[11px] text-ink-muted">ts {event.ts}</p>
+      </div>
+    </article>
   );
 }
