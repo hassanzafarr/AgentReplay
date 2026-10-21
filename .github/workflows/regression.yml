@@ -24,7 +24,7 @@ jobs:
         run: |
           pip install langgraph langchain-core langchain-anthropic pydantic
           pip install pytest pytest-asyncio
-          pip install -e .
+          pip install -e ".[otel]"
 
       - name: Run test suite
         run: pytest tests/ -v --tb=short

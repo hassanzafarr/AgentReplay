@@ -1,23 +1,31 @@
 "use client";
 
-import type { DivergenceReport, Trace } from "@/lib/types";
+import type { DivergenceReport, Trace, TraceEvent } from "@/lib/types";
 import { diffTraces } from "@/lib/diff";
+import { EVENT_STYLES } from "@/lib/events";
 import { useMemo } from "react";
+import { CompareIcon } from "./Icons";
+import PunchField from "./PunchField";
+import { eventTitle } from "./Timeline";
+import { punchSource } from "@/lib/punch";
 
+/* Unified diff on plain listing paper: struck red for the baseline, green for the candidate,
+   so the change reads by mark and colour together. */
 function DiffLine({ line }: { line: string }) {
   if (line.startsWith("+") && !line.startsWith("+++"))
-    return <div className="bg-emerald-500/15 text-emerald-300">{line}</div>;
+    return <div className="bg-add-bg text-add-ink">{line}</div>;
   if (line.startsWith("-") && !line.startsWith("---"))
-    return <div className="bg-red-500/15 text-red-300">{line}</div>;
+    return <div className="bg-del-bg text-del-ink line-through decoration-del-ink/35">{line}</div>;
   if (line.startsWith("@") || line.startsWith("---") || line.startsWith("+++"))
-    return <div className="text-fg-subtle">{line}</div>;
-  return <div className="text-code-fg/70">{line}</div>;
+    return <div className="text-ink-muted">{line}</div>;
+  return <div className="text-ink">{line}</div>;
 }
 
 function DiffBlock({ diff }: { diff: string }) {
   if (!diff) return null;
+  // Wrap instead of scrolling sideways: the changed words are often far past the fold.
   return (
-    <pre className="scroll-thin mt-2 max-h-56 overflow-auto rounded-lg bg-code-bg p-2 text-xs leading-relaxed">
+    <pre className="listing-plain scroll-thin mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words border-y border-card-line px-3 py-2 font-mono text-[12.5px] leading-5">
       {diff.split("\n").map((line, i) => (
         <DiffLine key={i} line={line} />
       ))}
@@ -25,12 +33,70 @@ function DiffBlock({ diff }: { diff: string }) {
   );
 }
 
-function StatTile({ label, value, accent }: { label: string; value: number; accent?: string }) {
+/* One deck as a column of slim cards; cards that diverge slide out toward the other deck. */
+function MiniDeck({
+  label,
+  events,
+  mismatched,
+  side,
+}: {
+  label: string;
+  events: TraceEvent[];
+  mismatched: Set<number>;
+  side: "a" | "b";
+}) {
   return (
-    <div className="rounded-xl border border-border bg-surface-2 px-3 py-2.5 text-center">
-      <div className={`text-2xl font-bold tabular-nums ${accent ?? "text-fg"}`}>{value}</div>
-      <div className="mt-0.5 text-[11px] uppercase tracking-wide text-fg-subtle">{label}</div>
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <h3 className="cardprint text-xs text-on-desk-muted">{label}</h3>
+      <ol className="flex flex-col gap-1">
+        {events.map((e) => {
+          const style = EVENT_STYLES[e.event_type] ?? EVENT_STYLES.clock;
+          const off = mismatched.has(e.seq);
+          return (
+            <li
+              key={e.seq}
+              className={`transition-transform duration-200 ease-out motion-reduce:transform-none ${
+                off ? (side === "a" ? "translate-x-2.5" : "-translate-x-2.5") : ""
+              } ${off ? "drop-shadow-[0_4px_6px_rgb(0_0_0/0.3)]" : ""}`}
+            >
+              <div className="punchcard flex items-stretch">
+                <span aria-hidden className={`w-1.5 shrink-0 ${style.stripe}`} />
+                {/* Band sits under the text on narrow decks and beside it from md, never hidden. */}
+                <div className="flex min-w-0 flex-1 flex-col gap-2 py-2 pl-2.5 pr-2.5 md:flex-row md:items-center">
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="flex items-baseline gap-2">
+                      <span className="font-mono text-xs tabular-nums text-print">
+                        {String(e.seq).padStart(2, "0")}
+                      </span>
+                      <span className={`cardprint text-[11px] ${style.ink}`}>{style.label}</span>
+                      {off && (
+                        <span
+                          className="cardprint ml-auto text-xs font-extrabold text-print"
+                          title="Diverges from the other deck"
+                        >
+                          ≠<span className="sr-only"> diverges</span>
+                        </span>
+                      )}
+                    </span>
+                    <span className="line-clamp-2 text-[13px] font-semibold leading-snug text-ink">{eventTitle(e)}</span>
+                  </div>
+                  <PunchField source={punchSource(e)} />
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
     </div>
+  );
+}
+
+function TierHeading({ stripe, children }: { stripe: string; children: React.ReactNode }) {
+  return (
+    <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-on-desk">
+      <span aria-hidden className={`h-3 w-3 ${stripe}`} />
+      {children}
+    </h3>
   );
 }
 
@@ -45,89 +111,77 @@ export default function DiffView({ traceA, traceB }: Props) {
     return diffTraces(traceA, traceB);
   }, [traceA, traceB]);
 
-  if (!traceA || !traceB) {
+  const decks = useMemo(() => {
+    if (!traceA || !traceB || !report) return null;
+    const sortA = [...traceA.events].sort((x, y) => x.seq - y.seq);
+    const sortB = [...traceB.events].sort((x, y) => x.seq - y.seq);
+    const diffable = (evs: TraceEvent[]) => evs.filter((e) => e.event_type === "llm_call" || e.event_type === "tool_call");
+    const offA = new Set<number>();
+    const offB = new Set<number>();
+    for (const d of [...report.tool_divergences, ...report.llm_divergences]) {
+      offA.add(d.seq_a);
+      offB.add(d.seq_b);
+    }
+    // Structural divergences point at positions in the diffable (LLM + tool) sequence.
+    const dA = diffable(sortA);
+    const dB = diffable(sortB);
+    for (const d of report.structural_divergences) {
+      if (dA[d.position]) offA.add(dA[d.position].seq);
+      if (dB[d.position]) offB.add(dB[d.position].seq);
+    }
+    return { sortA, sortB, offA, offB };
+  }, [traceA, traceB, report]);
+
+  if (!traceA || !traceB || !report || !decks) {
     return (
-      <div className="flex h-full min-h-48 flex-col items-center justify-center gap-2 p-8 text-center">
-        <span className="text-2xl opacity-40">🔬</span>
-        <p className="text-sm text-fg-subtle">Load two traces to compare them.</p>
+      <div className="flex min-h-48 flex-col items-center justify-center gap-2 border border-dashed border-desk-line p-8 text-center">
+        <CompareIcon className="h-6 w-6 text-on-desk-muted" />
+        <p className="text-sm text-on-desk-muted">Load two decks to compare them card by card.</p>
       </div>
     );
   }
 
-  if (!report) return null;
   const ok = report.is_identical;
+  const { stats } = report;
 
   return (
-    <div className="animate-fade-in flex flex-col gap-6 p-4">
-      {/* Verdict banner */}
-      <div
-        className={`flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 ${
-          ok
-            ? "border-emerald-500/30 bg-emerald-500/10"
-            : "border-red-500/30 bg-red-500/10"
-        }`}
-      >
-        <span
-          className={`grid h-8 w-8 place-items-center rounded-full text-sm ${
-            ok ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"
-          }`}
-        >
-          {ok ? "✓" : "≠"}
-        </span>
-        <div className="flex flex-col">
-          <span className={`text-sm font-semibold ${ok ? "text-emerald-400" : "text-red-400"}`}>
-            {ok ? "Traces identical" : "Divergence detected"}
+    <div className="animate-deal flex flex-col gap-8">
+      {/* Verdict */}
+      <div role="status" className="punchcard">
+        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 px-6 py-4">
+          <span className={`cardprint text-2xl font-extrabold ${ok ? "text-ev-llm-ink" : "text-print"}`}>
+            {ok ? "Decks match" : "Decks diverge"}
           </span>
-          <span className="text-xs text-fg-muted">{report.summary}</span>
+          <span className="font-mono text-xs text-ink-muted">
+            {stats.total_events_a} cards vs {stats.total_events_b} cards · structural {stats.structural} · tool{" "}
+            {stats.tool_call} · LLM {stats.llm_output}
+          </span>
+          {ok && (
+            <p className="w-full text-sm text-ink">
+              Replay matched the recording on all three tiers: graph path, tool calls and LLM calls. No regressions
+              detected.
+            </p>
+          )}
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-        <StatTile label="Events A" value={report.stats.total_events_a} />
-        <StatTile label="Events B" value={report.stats.total_events_b} />
-        <StatTile
-          label="Structural"
-          value={report.stats.structural}
-          accent={report.stats.structural ? "text-red-400" : "text-fg"}
-        />
-        <StatTile
-          label="Tool"
-          value={report.stats.tool_call}
-          accent={report.stats.tool_call ? "text-amber-400" : "text-fg"}
-        />
-        <StatTile
-          label="LLM"
-          value={report.stats.llm_output}
-          accent={report.stats.llm_output ? "text-violet-400" : "text-fg"}
-        />
+      {/* The two decks, aligned card for card */}
+      <div className="grid grid-cols-2 gap-4 sm:gap-8">
+        <MiniDeck label="Deck A · baseline" events={decks.sortA} mismatched={decks.offA} side="a" />
+        <MiniDeck label="Deck B · candidate" events={decks.sortB} mismatched={decks.offB} side="b" />
       </div>
-
-      {ok && (
-        <p className="rounded-lg bg-surface-2 px-4 py-3 text-sm text-fg-muted">
-          Replay reproduced the recording exactly — structurally and semantically identical. No
-          regressions detected.
-        </p>
-      )}
 
       {report.structural_divergences.length > 0 && (
         <section>
-          <h3 className="mb-2 text-sm font-semibold text-red-400">
-            Structural · {report.structural_divergences.length}
-          </h3>
+          <TierHeading stripe="bg-print">Structural · {report.structural_divergences.length}</TierHeading>
           <div className="flex flex-col gap-2">
             {report.structural_divergences.map((d, i) => (
-              <div
-                key={i}
-                className="rounded-lg border border-red-500/25 bg-red-500/5 p-3 text-sm"
-              >
-                <p className="font-medium text-fg">
-                  [{d.position}] {d.description}
+              <div key={i} className="punchcard px-5 py-3 text-sm">
+                <p className="font-semibold text-ink">
+                  <span className="font-mono text-print">[{d.position}]</span> {d.description}
                 </p>
-                {d.event_a && (
-                  <p className="mt-1 font-mono text-xs text-fg-muted">A: {d.event_a}</p>
-                )}
-                {d.event_b && <p className="font-mono text-xs text-fg-muted">B: {d.event_b}</p>}
+                {d.event_a && <p className="mt-1 font-mono text-xs text-ink-muted">A: {d.event_a}</p>}
+                {d.event_b && <p className="font-mono text-xs text-ink-muted">B: {d.event_b}</p>}
               </div>
             ))}
           </div>
@@ -136,17 +190,15 @@ export default function DiffView({ traceA, traceB }: Props) {
 
       {report.tool_divergences.length > 0 && (
         <section>
-          <h3 className="mb-2 text-sm font-semibold text-amber-400">
-            Tool Calls · {report.tool_divergences.length}
-          </h3>
+          <TierHeading stripe="bg-ev-tool">Tool calls · {report.tool_divergences.length}</TierHeading>
           <div className="flex flex-col gap-2">
             {report.tool_divergences.map((d, i) => (
-              <div
-                key={i}
-                className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 text-sm"
-              >
-                <p className="font-medium text-fg">
-                  [{d.tool_name}] {d.description}
+              <div key={i} className="punchcard px-5 py-3 text-sm">
+                <p className="font-semibold text-ink">
+                  <span className="font-mono text-print">
+                    [{d.seq_a}→{d.seq_b}]
+                  </span>{" "}
+                  {d.description}
                 </p>
                 <DiffBlock diff={d.args_diff} />
               </div>
@@ -157,17 +209,15 @@ export default function DiffView({ traceA, traceB }: Props) {
 
       {report.llm_divergences.length > 0 && (
         <section>
-          <h3 className="mb-2 text-sm font-semibold text-violet-400">
-            LLM Outputs · {report.llm_divergences.length}
-          </h3>
+          <TierHeading stripe="bg-ev-llm">LLM calls · {report.llm_divergences.length}</TierHeading>
           <div className="flex flex-col gap-2">
             {report.llm_divergences.map((d, i) => (
-              <div
-                key={i}
-                className="rounded-lg border border-violet-500/25 bg-violet-500/5 p-3 text-sm"
-              >
-                <p className="font-medium text-fg">
-                  [seq {d.seq_a}→{d.seq_b}] {d.description}
+              <div key={i} className="punchcard px-5 py-3 text-sm">
+                <p className="font-semibold text-ink">
+                  <span className="font-mono text-print">
+                    [{d.seq_a}→{d.seq_b}]
+                  </span>{" "}
+                  {d.description}
                 </p>
                 <DiffBlock diff={d.output_diff} />
               </div>

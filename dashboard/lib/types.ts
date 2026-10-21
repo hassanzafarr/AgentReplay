@@ -1,6 +1,22 @@
-// TypeScript types mirroring agentreplay/schema/trace.py (schema_version=1)
+// TypeScript types mirroring agentreplay/schema/trace.py (schema_version=2).
+// v2 fields are optional: v1 traces simply omit them.
 
 export type EventType = "llm_call" | "tool_call" | "clock" | "random";
+
+export interface TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cache_read_tokens?: number | null;
+  cache_creation_tokens?: number | null;
+}
+
+/** Schema v2 per-call context shared by LLM and tool events. */
+interface CallContext {
+  start_ts?: string | null;
+  duration_ms?: number | null;
+  node?: string | null;
+}
 
 export interface MessageRecord {
   // Recorder writes `type` (langchain message type); older traces used `role`.
@@ -9,7 +25,7 @@ export interface MessageRecord {
   content: string;
 }
 
-export interface LLMCallEvent {
+export interface LLMCallEvent extends CallContext {
   event_type: "llm_call";
   seq: number;
   hash: string;
@@ -19,9 +35,11 @@ export interface LLMCallEvent {
   output: string;
   output_blob_key?: string;
   kwargs: Record<string, string>;
+  model_id?: string | null;
+  usage?: TokenUsage | null;
 }
 
-export interface ToolCallEvent {
+export interface ToolCallEvent extends CallContext {
   event_type: "tool_call";
   seq: number;
   hash: string;

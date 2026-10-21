@@ -1,6 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { MoonIcon, SunIcon } from "./Icons";
 
 // The theme lives on <html class="dark"> (set pre-paint in layout.tsx), so read
 // it as an external store instead of mirroring it into state via an effect.
@@ -24,11 +25,13 @@ export default function ThemeToggle() {
   const dark = useSyncExternalStore(subscribe, isDark, () => false);
   return (
     <button
+      type="button"
       onClick={toggleTheme}
-      aria-label="Toggle theme"
-      className="grid h-8 w-8 place-items-center rounded-lg border border-border text-fg-muted transition-colors hover:bg-surface-3 hover:text-fg"
+      aria-label={dark ? "Switch to light theme" : "Switch to dark theme"}
+      title={dark ? "Switch to light theme" : "Switch to dark theme"}
+      className="grid h-8 w-8 shrink-0 place-items-center border border-desk-line text-on-desk-muted transition-colors hover:bg-desk-2 hover:text-on-desk"
     >
-      {dark ? "☀️" : "🌙"}
+      {dark ? <SunIcon /> : <MoonIcon />}
     </button>
   );
 }

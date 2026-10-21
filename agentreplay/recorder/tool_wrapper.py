@@ -25,6 +25,7 @@ from typing import Any
 from langchain_core.tools import BaseTool, StructuredTool
 
 from agentreplay.recorder.collector import TraceCollector
+from agentreplay.recorder.context import CallTimer, current_node
 from agentreplay.schema.trace import ToolCallEvent, content_hash
 
 
@@ -51,6 +52,7 @@ def wrap_tool(tool: BaseTool, collector: TraceCollector) -> BaseTool:
 
             error_msg: str | None = None
             output: str = ""
+            timer = CallTimer()
             try:
                 result = original_func(*args, **kwargs)
                 output = str(result)
@@ -65,6 +67,9 @@ def wrap_tool(tool: BaseTool, collector: TraceCollector) -> BaseTool:
                     input_args=input_args,
                     output=output,
                     error=error_msg,
+                    start_ts=timer.start_ts,
+                    duration_ms=timer.elapsed_ms(),
+                    node=current_node(),
                 )
                 collector.add_event(event)
 
@@ -80,6 +85,7 @@ def wrap_tool(tool: BaseTool, collector: TraceCollector) -> BaseTool:
 
             error_msg: str | None = None
             output: str = ""
+            timer = CallTimer()
             try:
                 result = await original_coroutine(*args, **kwargs)
                 output = str(result)
@@ -94,6 +100,9 @@ def wrap_tool(tool: BaseTool, collector: TraceCollector) -> BaseTool:
                     input_args=input_args,
                     output=output,
                     error=error_msg,
+                    start_ts=timer.start_ts,
+                    duration_ms=timer.elapsed_ms(),
+                    node=current_node(),
                 )
                 collector.add_event(event)
 
@@ -117,6 +126,7 @@ def _wrap_via_invoke(tool: BaseTool, collector: TraceCollector) -> BaseTool:
 
         error_msg: str | None = None
         output: str = ""
+        timer = CallTimer()
         try:
             result = original_invoke(input, **kwargs)
             output = str(result)
@@ -131,6 +141,9 @@ def _wrap_via_invoke(tool: BaseTool, collector: TraceCollector) -> BaseTool:
                 input_args=input_args,
                 output=output,
                 error=error_msg,
+                start_ts=timer.start_ts,
+                duration_ms=timer.elapsed_ms(),
+                node=current_node(),
             )
             collector.add_event(event)
 

@@ -44,3 +44,13 @@ dashboard/out/
 
 # Personal notes
 EXPLAINER.md
+
+# Local secrets (Langfuse / Anthropic keys) — never commit
+.env
+
+# Impeccable design tooling: kept local (reinstall with `npx impeccable install`)
+.claude/skills/impeccable/
+.claude/agents/impeccable-*.md
+.impeccable/
+DESIGN.md
+PRODUCT.md

@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/hassanzafarr/AgentReplay/actions/workflows/regression.yml/badge.svg)](https://github.com/hassanzafarr/AgentReplay/actions/workflows/regression.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
-![Tests](https://img.shields.io/badge/tests-100%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-148%20passing-brightgreen)
 ![LangGraph](https://img.shields.io/badge/LangGraph-1.x-purple)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -26,7 +26,7 @@ changes in CI, and compare model versions without paying for a single API call.
 | **Solution** | Intercept the four sources of non-determinism (LLM responses, tool results, the clock, randomness), save them to a trace file, and feed them back on replay. The agent becomes a deterministic program. |
 | **Result** | Any recorded run becomes a free, offline regression test. A one-word prompt edit is caught in CI with a readable diff showing exactly which call changed. |
 | **Built with** | Python 3.11, LangGraph, LangChain Core, Pydantic v2, pytest plugin API, GitHub Actions, Next.js 16 + TypeScript + Tailwind |
-| **Quality** | 100 unit/integration tests, golden-trace regression suite in CI, and a "tripwire" proof that replay makes zero live calls |
+| **Quality** | 148 unit/integration tests, golden-trace regression suite in CI, and a "tripwire" proof that replay makes zero live calls |
 
 ---
 
@@ -156,7 +156,33 @@ agentreplay serve          # http://localhost:3000
 agentreplay show traces/run.trace.json            # pretty-print a trace
 agentreplay diff traces/old.trace.json traces/new.trace.json
 agentreplay serve [--port N]                      # launch the dashboard
+agentreplay export traces/ --console              # print traces as OTel spans
 ```
+
+### 7. Export to OpenTelemetry and Langfuse
+Any trace can be sent as OpenTelemetry spans to Jaeger, Grafana Tempo, Datadog, Honeycomb, or Langfuse.
+Export reads the trace file after the run, so the record/replay path never touches the network.
+
+```bash
+pip install 'agentreplay[otel]'
+
+agentreplay export traces/ --endpoint http://localhost:4318/v1/traces   # any OTLP/HTTP collector
+agentreplay export traces/ --langfuse --environment ci                  # uses LANGFUSE_PUBLIC_KEY / _SECRET_KEY / _BASE_URL
+```
+
+```python
+from agentreplay.integrations.otel import export_trace
+export_trace(wrapped.last_trace)   # uses your app's global OTel tracer provider
+```
+
+- One root span per run, one child span per LLM call (`chat <model>`) and per tool call (`execute_tool <name>`). Clock and RNG draws become span events.
+- Uses the GenAI semantic conventions (`gen_ai.*`), plus `langfuse.*` hints so Langfuse shows generations and tools correctly.
+- Prompts, completions, and tool I/O are **not exported** unless you pass `--include-content`, because they can contain PII.
+- `--environment replay` tags every span, so replay and CI runs stay out of your production dashboards.
+- `--shift-to-now` re-times old traces (such as golden traces) to the moment of export, keeping all relative timing. Backends with data retention, including Langfuse Cloud, silently drop spans older than their window, so the CLI warns when a trace is over 7 days old.
+- `--langfuse` sends `x-langfuse-ingestion-version: 4`, so traces appear in Langfuse within seconds instead of up to 15 minutes.
+- Traces recorded with schema v2 carry measured latency, the real model id (e.g. `claude-sonnet-5-5-20260901`), token usage and the LangGraph node. Spans are grouped under one span per node, so Langfuse shows the agent's step tree and can price each call.
+- Older v1 traces only store completion times, so their start times are inferred from the previous event and marked `agentreplay.timing.inferred=true`.
 
 ---
 
@@ -220,7 +246,7 @@ Each decision below includes the alternative I rejected and why.
 | **How to intercept LLM calls** | Wrap LangChain's `BaseChatModel`. It is a stable extension point that works with any provider, and every call in the graph flows through it. | Monkeypatching provider SDKs: fragile, per-provider, and blind to LangChain's message normalisation. |
 | **Matching a call to its recording** | **Hybrid: content hash first, ordered cursor second, miss = reported divergence.** The hash survives reordered code paths, and the cursor disambiguates identical repeated prompts (retry loops). | Pure ordering breaks on parallel nodes. Pure hashing can't tell two identical retries apart. |
 | **What happens when replay doesn't match** | A miss is a **reported feature, not a crash**. It becomes the test-failure message. | Throwing a generic error, which tells the developer nothing. |
-| **Trace format** | One JSON file per run, a Pydantic v2 discriminated union of 4 event types, a global `seq` for async ordering, content-addressed blobs, and `schema_version` frozen at 1. | Ad-hoc dicts, which give no validation and silently corrupt old traces. |
+| **Trace format** | One JSON file per run, a Pydantic v2 discriminated union of 4 event types, a global `seq` for async ordering, content-addressed blobs, and a `schema_version` where new versions only add optional fields (v2: latency, tokens, model id, node), so every old trace still loads and newer ones are rejected instead of silently truncated. | Ad-hoc dicts, which give no validation and silently corrupt old traces. |
 | **Clock & randomness** | Virtualised inside a context manager that is scoped to the run. | Global patching at import time, which pollutes the host process and other tests. |
 | **Proving zero cost** | A tripwire model that raises if called. | Checking the API bill: indirect, slow, and not provable in CI. |
 
@@ -235,13 +261,14 @@ next started:
 | 2. Replayer | Replay engine, hybrid matcher, 3-tier diff, CLI | 92 tests |
 | 3. CI | pytest plugin, GitHub Actions regression suite | 100 tests |
 | 4. Dashboard | Next.js trace viewer + diff view | Production build + type-check |
+| 5. Observability | OpenTelemetry/Langfuse export, schema v2 (latency, tokens, model id, node) | 148 tests, verified live in Langfuse Cloud |
 
 ---
 
 ## Testing
 
 ```bash
-pytest tests/ -q                     # 100 unit + integration tests, ~2s
+pytest tests/ -q                     # 148 unit + integration tests, ~4s
 pytest examples/research_agent/ \
   --agentreplay-traces=examples/research_agent/traces \
   --agentreplay-agent=examples.research_agent.agent:build_agent   # golden-trace regression suite

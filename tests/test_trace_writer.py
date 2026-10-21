@@ -16,6 +16,7 @@ import pytest
 
 from agentreplay.recorder.trace_writer import TraceWriter
 from agentreplay.schema.trace import (
+    SCHEMA_VERSION,
     LLMCallEvent,
     MessageRecord,
     ToolCallEvent,
@@ -81,7 +82,7 @@ class TestTraceWriter:
         with open(path) as f:
             data = json.load(f)
 
-        assert data["schema_version"] == 1
+        assert data["schema_version"] == SCHEMA_VERSION
         assert len(data["events"]) == 2
 
     def test_roundtrip_through_pydantic(self, trace_dir, sample_trace):
